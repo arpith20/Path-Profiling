@@ -31,7 +31,7 @@ import soot.util.dot.DotGraph;
  *
  * 
  */
-public class CFGViewer extends BodyTransformer{
+public class CFGViewer extends BodyTransformer {
 
 	private static final String packToJoin = "jtp";
 	private static final String phaseSubname = "printcfg";
@@ -54,6 +54,18 @@ public class CFGViewer extends BodyTransformer{
 
 	HashMap<Unit, NodeData> nodeDataHash = new HashMap<Unit, NodeData>();
 
+	public class EdgeCustom {
+		public Unit src;
+		public Unit tgt;
+
+		public EdgeCustom(Unit s, Unit t) {
+			src = s;
+			tgt = t;
+		}
+	}
+
+	public List<EdgeCustom> spanningTree = new ArrayList<EdgeCustom>();
+
 	public class NodeData {
 		public int nodeNumber; // a unique number assigned to wach node
 		public int numPaths; // NumPaths (v) as defined in paper; Figure 5
@@ -61,10 +73,14 @@ public class CFGViewer extends BodyTransformer{
 												// the outgoing edges of a node
 		// Val (e) as defined in paper; Figure 5
 
+		public List<EdgeCustom> succ_list; // stores outgoing edges of this node
+		public Unit succSpanningNode;
+
 		NodeData(int val) {
 			nodeNumber = val;
 			numPaths = 0;
 			edgeVal = new HashMap<Unit, Integer>();
+			succ_list = new ArrayList<EdgeCustom>();
 		}
 
 		public int getNodeNumber() {
@@ -85,11 +101,9 @@ public class CFGViewer extends BodyTransformer{
 		initialize(options);
 		SootMethod meth = b.getMethod();
 
-		
-
 		if ((methodsToPrint == null) || (meth.getDeclaringClass().getName() == methodsToPrint.get(meth.getName()))) {
 			Body body = ir.getBody((JimpleBody) b);
-			System.out.println("This is the IR: \n" + body.toString());
+			// System.out.println("This is the IR: \n" + body.toString());
 			BriefUnitGraph cfg = new BriefUnitGraph(b);
 
 			// iterate through all statements and initialize them correctly
@@ -97,7 +111,6 @@ public class CFGViewer extends BodyTransformer{
 			int i = 0;
 			while (cfg_iterator.hasNext()) {
 				Unit unit = cfg_iterator.next();
-				System.out.println("Currently in instruction:" + unit.toString());
 
 				NodeData node = new NodeData(i++);
 
@@ -108,19 +121,106 @@ public class CFGViewer extends BodyTransformer{
 																	// count to
 																	// 0
 				}
-
 				nodeDataHash.put(unit, node);
 			}
 
-			displayNodeDataHash(cfg);
+			initializeSuccList(cfg);
+			// displayNodeDataHash(cfg);
 
 			// assign values to edges in DAG (Algo in Figure 5)
 			figure5(cfg);
 
-			displayNodeDataHash(cfg);
+			maxEdge(cfg);
+
+			// displayNodeDataHash(cfg);
 
 			print_cfg(b);
 			System.out.println("Exiting internalTransform");
+		}
+	}
+
+	public void maxEdge(BriefUnitGraph cfg) {
+		HashMap<Unit, Boolean> visited = new HashMap<Unit, Boolean>();
+
+		// initialize
+		Iterator<Unit> cfg_iterator = cfg.iterator();
+		while (cfg_iterator.hasNext()) {
+			Unit unit = cfg_iterator.next();
+			visited.put(unit, false);
+			nodeDataHash.get(unit).succSpanningNode = null;
+		}
+
+		int max;
+		Unit ret = null;
+		Unit max_unit = null, max_unitSucc = null;
+
+		// i need no of nodes-1 edges
+		for (int i = 0; i < (cfg.size() - 1); i++) {
+			max = Integer.MIN_VALUE;
+			cfg_iterator = cfg.iterator();
+			while (cfg_iterator.hasNext()) {
+				Unit unit = cfg_iterator.next();
+				NodeData nd = nodeDataHash.get(unit);
+				Iterator it = nd.edgeVal.entrySet().iterator();
+				while (it.hasNext()) {
+					Map.Entry pair = (Map.Entry) it.next();
+					Unit cur_unit = (Unit) pair.getKey();
+					int cur_val = (Integer) pair.getValue();
+					// System.out.println(unit+"******************"+cur_unit+"&&"+cur_val);
+					System.out.print("&&&" + cur_val + max);
+					if (!(visited.get(unit) && visited.get(cur_unit))) {
+						System.out.println("&&&" + cur_val + max);
+						if (cur_val > max) {
+							max = cur_val;
+							max_unit = unit;
+							max_unitSucc = cur_unit;
+							nodeDataHash.get(unit).succSpanningNode = cur_unit;
+
+							// System.out.println(visited.get(unit) + "*" +
+							// max_unit + "-" + max_unitSucc + "-" + max);
+						}
+					} else
+						System.out.println();
+
+				}
+			}
+			visited.put(max_unit, true);
+			visited.put(max_unitSucc, true);
+			System.out.println("*" + max_unit + "**********" + max_unitSucc + "-" + max);
+		}
+	}
+
+	public Unit minVertex(BriefUnitGraph cfg, HashMap<Unit, Integer> dist, HashMap<Unit, Boolean> visited) {
+		int x = Integer.MAX_VALUE;
+		Unit y = null;
+		Iterator it = dist.entrySet().iterator();
+		while (it.hasNext()) {
+			Map.Entry pair = (Map.Entry) it.next();
+			Unit unit = (Unit) pair.getKey();
+			if (!(visited.get(unit)) && (int) dist.get(unit) < x) {
+				y = unit;
+				x = (int) dist.get(unit);
+			}
+		}
+		return y;
+	}
+
+	// TODO: remove back edges
+	public void initializeSuccList(BriefUnitGraph cfg) {
+		Iterator<Unit> cfg_iterator = cfg.iterator();
+		while (cfg_iterator.hasNext()) {
+			Unit unit = cfg_iterator.next();
+
+			NodeData node = nodeDataHash.get(unit);
+
+			Iterator<Unit> succ_iterator = cfg.getSuccsOf(unit).iterator();
+			while (succ_iterator.hasNext()) {
+				Unit succ = succ_iterator.next();
+				EdgeCustom ne = new EdgeCustom(unit, succ);
+				node.succ_list.add(ne);
+			}
+
+			nodeDataHash.put(unit, node);
 		}
 	}
 
@@ -160,7 +260,11 @@ public class CFGViewer extends BodyTransformer{
 			List<Unit> succNodes = cfg.getSuccsOf((Unit) pair.getKey());
 			for (Unit succNode : succNodes) {
 				NodeData nd = nodeDataHash.get(node);
-				System.out.print("   " + succNode + "-" + nd.getEdgeVal(succNode)+";"+nd.numPaths);
+				System.out.print("   " + succNode + "-" + nd.getEdgeVal(succNode) + ";" + nd.numPaths);
+			}
+			System.out.println();
+			for (EdgeCustom ne : nodeData.succ_list) {
+				System.out.print("   " + ne.tgt + "-");
 			}
 			System.out.println();
 		}
