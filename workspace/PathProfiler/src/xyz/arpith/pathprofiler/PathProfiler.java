@@ -52,9 +52,11 @@ public class PathProfiler extends BodyTransformer {
 	// from method name to the class
 	// name declaring the method.
 
+	Unit ENTRY;
 	HashMap<Unit, NodeData> nodeDataHash = new HashMap<Unit, NodeData>();
 	List<MyEdge> spanningTreeEdges = new ArrayList<MyEdge>();
 	List<MyEdge> chordEdges = new ArrayList<MyEdge>();
+	HashMap<MyEdge, Integer> inc = new HashMap<MyEdge, Integer>();
 
 	public class MyEdge {
 		Unit src;
@@ -66,6 +68,10 @@ public class PathProfiler extends BodyTransformer {
 		}
 
 		public boolean equals(MyEdge e2) {
+			if (this == null && e2 == null)
+				return true;
+			if (this == null || e2 == null)
+				return false;
 			if (this.src == e2.src) {
 				if (this.tgt == e2.tgt)
 					return true;
@@ -91,13 +97,10 @@ public class PathProfiler extends BodyTransformer {
 
 		public List<Unit> succSpanningNode;
 
-		public HashMap<Unit, Integer> increment;
-
 		NodeData(int val) {
 			nodeNumber = val;
 			numPaths = 0;
 			edgeVal = new HashMap<Unit, Integer>();
-			increment = new HashMap<Unit, Integer>();
 			succSpanningNode = new ArrayList<Unit>();
 		}
 
@@ -115,6 +118,74 @@ public class PathProfiler extends BodyTransformer {
 		}
 	}
 
+	public void fabricatedata(BriefUnitGraph cfg) {
+		Iterator<Unit> cfg_iterator = cfg.iterator();
+
+		Unit u1 = cfg_iterator.next();
+		Unit u2 = cfg_iterator.next();
+		Unit u3 = cfg_iterator.next();
+		Unit u4 = cfg_iterator.next();
+		Unit u5 = cfg_iterator.next();
+		Unit u6 = cfg_iterator.next();
+
+		MyEdge e1 = new MyEdge(u1, u2);
+		MyEdge e2 = new MyEdge(u1, u3);
+		MyEdge e3 = new MyEdge(u2, u3);
+		MyEdge e4 = new MyEdge(u2, u4);
+		MyEdge e5 = new MyEdge(u3, u4);
+		MyEdge e6 = new MyEdge(u4, u5);
+		MyEdge e7 = new MyEdge(u4, u6);
+		MyEdge e8 = new MyEdge(u5, u6);
+		MyEdge e9 = new MyEdge(u6, u1);
+
+		spanningTreeEdges.add(e1);
+		spanningTreeEdges.add(e5);
+		spanningTreeEdges.add(e7);
+		spanningTreeEdges.add(e8);
+		spanningTreeEdges.add(e9);
+
+		chordEdges.add(e2);
+		chordEdges.add(e3);
+		chordEdges.add(e4);
+		chordEdges.add(e6);
+
+		NodeData nd = new NodeData(1);
+		nd.edgeVal.put(u2, 2);
+		nd.edgeVal.put(u3, 0);
+		nodeDataHash.put(u1, nd);
+
+		nd = new NodeData(2);
+		nd.edgeVal.put(u3, 0);
+		nd.edgeVal.put(u4, 2);
+		nodeDataHash.put(u2, nd);
+
+		nd = new NodeData(3);
+		nd.edgeVal.put(u4, 0);
+		nodeDataHash.put(u3, nd);
+
+		nd = new NodeData(4);
+		nd.edgeVal.put(u5, 1);
+		nd.edgeVal.put(u6, 0);
+		nodeDataHash.put(u4, nd);
+
+		nd = new NodeData(5);
+		nd.edgeVal.put(u6, 0);
+		nodeDataHash.put(u5, nd);
+
+		nd = new NodeData(6);
+		nd.edgeVal.put(u1, 0);
+		nodeDataHash.put(u6, nd);
+
+		System.out.println(u1.toString());
+		System.out.println(u2.toString());
+		System.out.println(u3.toString());
+		System.out.println(u4.toString());
+		System.out.println(u5.toString());
+		System.out.println(u6.toString());
+
+		determineIncrements(cfg);
+	}
+
 	protected void internalTransform(Body b, String phaseName, Map options) {
 		initialize(options);
 		SootMethod meth = b.getMethod();
@@ -123,6 +194,11 @@ public class PathProfiler extends BodyTransformer {
 			Body body = ir.getBody((JimpleBody) b);
 			// System.out.println("This is the IR: \n" + body.toString());
 			BriefUnitGraph cfg = new BriefUnitGraph(b);
+
+			ENTRY = cfg.getHeads().get(0);
+
+			// for initial stage testing
+			// fabricatedata(cfg);
 
 			// iterate through all statements and initialize them correctly
 			Iterator<Unit> cfg_iterator = cfg.iterator();
@@ -135,9 +211,9 @@ public class PathProfiler extends BodyTransformer {
 				Iterator<Unit> succ_iterator = cfg.getSuccsOf(unit).iterator();
 				while (succ_iterator.hasNext()) {
 					node.updateEdgeVal(succ_iterator.next(), 0); // initialize
-																	// edgeValue
-																	// count to
-																	// 0
+					// edgeValue
+					// count to
+					// 0
 				}
 				nodeDataHash.put(unit, node);
 			}
@@ -146,13 +222,14 @@ public class PathProfiler extends BodyTransformer {
 			figure5(cfg);
 
 			buildSpanningTree(cfg);
+			buildChordEdges(cfg);
+
 			determineIncrements(cfg);
 
 			// display
-			buildChordEdges(cfg);
-			displayChordEdges();
-			displaySpanningTree();
-			displayNodeDataHash(cfg);
+			// displayChordEdges();
+			// displaySpanningTree();
+			// displayNodeDataHash(cfg);
 
 			print_cfg(b);
 			System.out.println("Exiting internalTransform");
@@ -176,10 +253,52 @@ public class PathProfiler extends BodyTransformer {
 	}
 
 	public void determineIncrements(BriefUnitGraph cfg) {
-		// initialize increment values
-		Iterator<Unit> cfg_iterator = cfg.iterator();
-		while (cfg_iterator.hasNext()) {
-			Unit unit = cfg_iterator.next();
+		// initialize int inc variable
+		for (MyEdge e : chordEdges) {
+			inc.put(e, 0);
+		}
+
+		DFS(0, ENTRY, null);
+
+		for (MyEdge e : chordEdges) {
+			Integer i = inc.get(e) + Events(e);
+			inc.put(e, i);
+			System.out.println("Increment: " + e.src + "&&&&" + e.tgt + "&&&&&&" + i);
+		}
+	}
+
+	public void DFS(Integer events, Unit v, MyEdge e) {
+		for (MyEdge f : spanningTreeEdges) {
+			if (!(f.equals(e)) && (v == f.tgt)) {
+				DFS(((Dir(e, f) * events) + Events(f)), f.src, f);
+			}
+		}
+		for (MyEdge f : spanningTreeEdges) {
+			if ((!(f.equals(e))) && (v == f.src)) {
+				DFS(((Dir(e, f) * events) + Events(f)), f.tgt, f);
+			}
+		}
+		for (MyEdge f : chordEdges) {
+			if (v == f.src || v == f.tgt) {
+				Integer value;
+				value = inc.get(f) + (Dir(e, f) * events);
+				inc.put(f, value);
+			}
+		}
+	}
+
+	public Integer Events(MyEdge e) {
+		NodeData nd = nodeDataHash.get(e.src);
+		return nd.edgeVal.get(e.tgt);
+	}
+
+	public Integer Dir(MyEdge e, MyEdge f) {
+		if (e == null)
+			return 1;
+		else if ((e.src == f.tgt) || (e.tgt == f.src)) {
+			return 1;
+		} else {
+			return -1;
 		}
 	}
 
@@ -192,6 +311,11 @@ public class PathProfiler extends BodyTransformer {
 			Unit unit = cfg_iterator.next();
 			disjointSet.create_set(unit);
 		}
+
+		disjointSet.union(cfg.getHeads().get(0), cfg.getTails().get(0));
+		nodeDataHash.get(cfg.getTails().get(0)).succSpanningNode.add(cfg.getHeads().get(0));
+		spanningTreeEdges.add(new MyEdge(cfg.getTails().get(0), cfg.getHeads().get(0)));
+		nodeDataHash.get(cfg.getTails().get(0)).edgeVal.put(cfg.getHeads().get(0), 0);
 
 		int max;
 		Unit ret = null;
@@ -217,9 +341,7 @@ public class PathProfiler extends BodyTransformer {
 							max_unit = unit;
 							max_unitSucc = cur_unit;
 						}
-					} else
-						System.out.println();
-
+					}
 				}
 			}
 			disjointSet.union(max_unit, max_unitSucc);
