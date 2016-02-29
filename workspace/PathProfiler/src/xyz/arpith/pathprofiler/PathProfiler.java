@@ -54,6 +54,19 @@ public class PathProfiler extends BodyTransformer {
 
 	HashMap<Unit, NodeData> nodeDataHash = new HashMap<Unit, NodeData>();
 
+	public class MyEdge {
+		Unit src;
+		Unit tgt;
+
+		public MyEdge(Unit u1, Unit u2) {
+			src = u1;
+			tgt = u2;
+		}
+	}
+
+	List<MyEdge> spanningTreeEdges = new ArrayList<MyEdge>();
+	List<MyEdge> chordEdges = new ArrayList<MyEdge>();
+
 	public class NodeData {
 		public int nodeNumber; // a unique number assigned to wach node
 		public int numPaths; // NumPaths (v) as defined in paper; Figure 5
@@ -63,10 +76,13 @@ public class PathProfiler extends BodyTransformer {
 
 		public List<Unit> succSpanningNode;
 
+		public HashMap<Unit, Integer> increment;
+
 		NodeData(int val) {
 			nodeNumber = val;
 			numPaths = 0;
 			edgeVal = new HashMap<Unit, Integer>();
+			increment = new HashMap<Unit, Integer>();
 			succSpanningNode = new ArrayList<Unit>();
 		}
 
@@ -115,11 +131,29 @@ public class PathProfiler extends BodyTransformer {
 			figure5(cfg);
 
 			buildSpanningTree(cfg);
+			determineIncrements(cfg);
 
+			//displaySpanningTree();
 			displayNodeDataHash(cfg);
 
 			print_cfg(b);
 			System.out.println("Exiting internalTransform");
+		}
+	}
+
+	public void displaySpanningTree() {
+		System.out.println("&&&&&&&&&&&&&&&&&&&&&&&&&");
+		for (MyEdge e : spanningTreeEdges) {
+			System.out.println("Edge: " + e.src + " -> "+e.tgt);
+		}
+		System.out.println("&&&&&&&&&&&&&&&&&&&&&&&&&");
+	}
+
+	public void determineIncrements(BriefUnitGraph cfg) {
+		// initialize increment values
+		Iterator<Unit> cfg_iterator = cfg.iterator();
+		while (cfg_iterator.hasNext()) {
+			Unit unit = cfg_iterator.next();
 		}
 	}
 
@@ -163,6 +197,7 @@ public class PathProfiler extends BodyTransformer {
 				}
 			}
 			disjointSet.union(max_unit, max_unitSucc);
+			spanningTreeEdges.add(new MyEdge(max_unit, max_unitSucc));
 			nodeDataHash.get(max_unit).succSpanningNode.add(max_unitSucc);
 			// System.out.println("*" + max_unit + "**********" + max_unitSucc +
 			// "-" + max);
