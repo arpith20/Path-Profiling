@@ -31,7 +31,7 @@ import soot.util.dot.DotGraph;
  *
  * 
  */
-public class CFGViewer extends BodyTransformer {
+public class PathProfiler extends BodyTransformer {
 
 	private static final String packToJoin = "jtp";
 	private static final String phaseSubname = "printcfg";
@@ -132,6 +132,14 @@ public class CFGViewer extends BodyTransformer {
 
 			maxEdge(cfg);
 
+			DisjointSets disjointSet = new DisjointSets();
+			disjointSet.create_set(cfg.getTails().get(0));
+			disjointSet.create_set(cfg.getHeads().get(0));
+			disjointSet.union(cfg.getTails().get(0), cfg.getHeads().get(0));
+			if (disjointSet.find_set(cfg.getTails().get(0)) == disjointSet.find_set(cfg.getHeads().get(0))) {
+				System.out.println("****************************************");
+			}
+
 			// displayNodeDataHash(cfg);
 
 			print_cfg(b);
@@ -140,13 +148,13 @@ public class CFGViewer extends BodyTransformer {
 	}
 
 	public void maxEdge(BriefUnitGraph cfg) {
-		HashMap<Unit, Boolean> visited = new HashMap<Unit, Boolean>();
+		DisjointSets disjointSet = new DisjointSets();
 
 		// initialize
 		Iterator<Unit> cfg_iterator = cfg.iterator();
 		while (cfg_iterator.hasNext()) {
 			Unit unit = cfg_iterator.next();
-			visited.put(unit, false);
+			disjointSet.create_set(unit);
 			nodeDataHash.get(unit).succSpanningNode = null;
 		}
 
@@ -155,7 +163,7 @@ public class CFGViewer extends BodyTransformer {
 		Unit max_unit = null, max_unitSucc = null;
 
 		// i need no of nodes-1 edges
-		for (int i = 0; i < (cfg.size() - 1); i++) {
+		while (disjointSet.getNumberofDisjointSets() != 1) {
 			max = Integer.MIN_VALUE;
 			cfg_iterator = cfg.iterator();
 			while (cfg_iterator.hasNext()) {
@@ -168,7 +176,7 @@ public class CFGViewer extends BodyTransformer {
 					int cur_val = (Integer) pair.getValue();
 					// System.out.println(unit+"******************"+cur_unit+"&&"+cur_val);
 					System.out.print("&&&" + cur_val + max);
-					if (!(visited.get(unit) && visited.get(cur_unit))) {
+					if (disjointSet.find_set(unit) != disjointSet.find_set(cur_unit)) {
 						System.out.println("&&&" + cur_val + max);
 						if (cur_val > max) {
 							max = cur_val;
@@ -184,25 +192,9 @@ public class CFGViewer extends BodyTransformer {
 
 				}
 			}
-			visited.put(max_unit, true);
-			visited.put(max_unitSucc, true);
+			disjointSet.union(max_unit, max_unitSucc);
 			System.out.println("*" + max_unit + "**********" + max_unitSucc + "-" + max);
 		}
-	}
-
-	public Unit minVertex(BriefUnitGraph cfg, HashMap<Unit, Integer> dist, HashMap<Unit, Boolean> visited) {
-		int x = Integer.MAX_VALUE;
-		Unit y = null;
-		Iterator it = dist.entrySet().iterator();
-		while (it.hasNext()) {
-			Map.Entry pair = (Map.Entry) it.next();
-			Unit unit = (Unit) pair.getKey();
-			if (!(visited.get(unit)) && (int) dist.get(unit) < x) {
-				y = unit;
-				x = (int) dist.get(unit);
-			}
-		}
-		return y;
 	}
 
 	// TODO: remove back edges
@@ -272,7 +264,7 @@ public class CFGViewer extends BodyTransformer {
 	}
 
 	public static void main(String[] args) {
-		CFGViewer viewer = new CFGViewer();
+		PathProfiler viewer = new PathProfiler();
 		Transform printTransform = new Transform(phaseFullname, viewer);
 		printTransform.setDeclaredOptions("enabled " + altClassPathOptionName + ' ' + graphTypeOptionName + ' '
 				+ irOptionName + ' ' + multipageOptionName + ' ' + briefLabelOptionName + ' ');
