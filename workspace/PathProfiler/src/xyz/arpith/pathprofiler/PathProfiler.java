@@ -53,6 +53,8 @@ public class PathProfiler extends BodyTransformer {
 	// name declaring the method.
 
 	HashMap<Unit, NodeData> nodeDataHash = new HashMap<Unit, NodeData>();
+	List<MyEdge> spanningTreeEdges = new ArrayList<MyEdge>();
+	List<MyEdge> chordEdges = new ArrayList<MyEdge>();
 
 	public class MyEdge {
 		Unit src;
@@ -62,10 +64,23 @@ public class PathProfiler extends BodyTransformer {
 			src = u1;
 			tgt = u2;
 		}
-	}
 
-	List<MyEdge> spanningTreeEdges = new ArrayList<MyEdge>();
-	List<MyEdge> chordEdges = new ArrayList<MyEdge>();
+		public boolean equals(MyEdge e2) {
+			if (this.src == e2.src) {
+				if (this.tgt == e2.tgt)
+					return true;
+			}
+			return false;
+		}
+
+		public boolean isContainedIn(List<MyEdge> l) {
+			for (MyEdge e : l) {
+				if (this.equals(e))
+					return true;
+			}
+			return false;
+		}
+	}
 
 	public class NodeData {
 		public int nodeNumber; // a unique number assigned to wach node
@@ -133,7 +148,10 @@ public class PathProfiler extends BodyTransformer {
 			buildSpanningTree(cfg);
 			determineIncrements(cfg);
 
-			//displaySpanningTree();
+			// display
+			buildChordEdges(cfg);
+			displayChordEdges();
+			displaySpanningTree();
 			displayNodeDataHash(cfg);
 
 			print_cfg(b);
@@ -141,12 +159,20 @@ public class PathProfiler extends BodyTransformer {
 		}
 	}
 
-	public void displaySpanningTree() {
-		System.out.println("&&&&&&&&&&&&&&&&&&&&&&&&&");
-		for (MyEdge e : spanningTreeEdges) {
-			System.out.println("Edge: " + e.src + " -> "+e.tgt);
+	public void buildChordEdges(BriefUnitGraph cfg) {
+		Iterator<Unit> cfg_iterator = cfg.iterator();
+		while (cfg_iterator.hasNext()) {
+			Unit unit = cfg_iterator.next();
+			List<Unit> succs = cfg.getSuccsOf(unit);
+			for (Unit succ : succs) {
+				MyEdge chord = new MyEdge(unit, succ);
+				if (!chord.isContainedIn(spanningTreeEdges)) {
+					if (!chord.isContainedIn(chordEdges)) {
+						chordEdges.add(chord);
+					}
+				}
+			}
 		}
-		System.out.println("&&&&&&&&&&&&&&&&&&&&&&&&&");
 	}
 
 	public void determineIncrements(BriefUnitGraph cfg) {
@@ -245,6 +271,26 @@ public class PathProfiler extends BodyTransformer {
 			System.out.println();
 			System.out.println("  " + nodeData.succSpanningNode);
 		}
+	}
+
+	public void displayChordEdges() {
+		System.out.println("&&&&&&&&&&&&&Chord Edges&&&&&&&&&&&&&&&&&");
+
+		for (MyEdge e : chordEdges) {
+			System.out.println("ChordEdge: " + e.src + " -> " + e.tgt);
+		}
+
+		System.out.println("&&&&&&&&&&&&&&&&&&&&&&&&&");
+	}
+
+	public void displaySpanningTree() {
+		System.out.println("&&&&&&&&&&&&&Spanning Tree&&&&&&&&&&&&&&&&&");
+
+		for (MyEdge e : spanningTreeEdges) {
+			System.out.println("SpanningEdge: " + e.src + " -> " + e.tgt);
+		}
+
+		System.out.println("&&&&&&&&&&&&&&&&&&&&&&&&&");
 	}
 
 	public static void main(String[] args) {
