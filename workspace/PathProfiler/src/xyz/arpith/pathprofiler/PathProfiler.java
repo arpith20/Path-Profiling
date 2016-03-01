@@ -9,6 +9,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Queue;
 
+import org.jboss.util.graph.Edge;
+
 import soot.Body;
 import soot.BodyTransformer;
 import soot.G;
@@ -61,7 +63,9 @@ public class PathProfiler extends BodyTransformer {
 	HashMap<Unit, NodeData> nodeDataHash = new HashMap<Unit, NodeData>();
 	List<MyEdge> spanningTreeEdges = new ArrayList<MyEdge>();
 	List<MyEdge> chordEdges = new ArrayList<MyEdge>();
+	List<MyEdge> allEdges = new ArrayList<MyEdge>();
 	HashMap<MyEdge, Integer> inc = new HashMap<MyEdge, Integer>();
+	HashMap<MyEdge, String> instrument = new HashMap<MyEdge, String>();
 
 	SootClass counterClass = null;
 	SootMethod increaseCounter, reportCounter;
@@ -245,6 +249,8 @@ public class PathProfiler extends BodyTransformer {
 
 			determineIncrements(cfg);
 
+			placeInstruments(cfg);
+
 			// display
 			// displayChordEdges();
 			displaySpanningTree();
@@ -253,6 +259,85 @@ public class PathProfiler extends BodyTransformer {
 			print_cfg(b);
 			System.out.println("Exiting internalTransform");
 		}
+	}
+
+	public void placeInstruments(BriefUnitGraph cfg) {
+
+		// initialize all edges
+		allEdges.addAll(chordEdges);
+		allEdges.addAll(spanningTreeEdges);
+
+		// register initialization code
+		Queue<Unit> WS = new LinkedList<Unit>();
+		WS.add(ENTRY);
+		while (!WS.isEmpty()) {
+			Unit v = WS.remove();
+			List<Unit> succ = cfg.getSuccsOf(v);
+			// if (v == EXIT) {
+			// succ.add(ENTRY);
+			// }
+			for (Unit w : succ) {
+				MyEdge e = retriveEdge(v, w);
+				if (e.isContainedIn(chordEdges)) {
+					String value = "r=" + inc.get(e);
+					instrument.put(e, value);
+				} // else if (w == ENTRY || cfg.getPredsOf(w).size() == 1) {
+				else if (cfg.getPredsOf(w).size() == 1) {
+					WS.add(w);
+				} else {
+					instrument.put(e, "r=0");
+				}
+			}
+		}
+
+		// memory increment code
+		WS.add(EXIT);
+		while (!WS.isEmpty()) {
+			Unit w = WS.remove();
+			List<Unit> pred = cfg.getPredsOf(w);
+			// if (w == ENTRY) {
+			// pred.add(EXIT);
+			// }
+			for (Unit v : pred) {
+				MyEdge e = retriveEdge(v, w);
+				if (e.isContainedIn(chordEdges)) {
+					Integer inc_e = inc.get(e);
+					if (instrument.get(e) != null && instrument.get(e).equals("r=" + inc_e)) {
+						instrument.put(e, "count[" + inc_e + "]++");
+					} else {
+						instrument.put(e, "count[r+" + inc_e + "]++");
+					}
+				} // else if (v == EXIT || cfg.getSuccsOf(v).size() == 1) {
+				else if (cfg.getSuccsOf(v).size() == 1) {
+					WS.add(v);
+				} else {
+					instrument.put(e, "count[r]++");
+				}
+			}
+		}
+
+		// register increment code
+		for (MyEdge c : chordEdges) {
+			if (instrument.get(c) == null) {
+				instrument.put(c, "r=r+" + inc.get(c));
+			}
+		}
+
+		Iterator it = instrument.entrySet().iterator();
+		while (it.hasNext()) {
+			Map.Entry pair = (Map.Entry) it.next();
+			MyEdge edge = (MyEdge) pair.getKey();
+			String val = (String) pair.getValue();
+			System.out.println("Instrument:" + edge.src + "************" + edge.tgt + "&&" + val);
+		}
+	}
+
+	public MyEdge retriveEdge(Unit src, Unit tgt) {
+		for (MyEdge e : allEdges) {
+			if (e.src == src && e.tgt == tgt)
+				return e;
+		}
+		return null;
 	}
 
 	public void buildChordEdges(BriefUnitGraph cfg) {
@@ -452,17 +537,14 @@ public class PathProfiler extends BodyTransformer {
 				+ defaultGraph + ' ' + irOptionName + ':' + defaultIR + ' ' + multipageOptionName + ":false " + ' '
 				+ briefLabelOptionName + ":false ");
 		PackManager.v().getPack("jtp").add(printTransform);
-		String[] arg = { "--cp",
-				"/home/arpith/iisc/ase/projects/path_profiling/testprogs/:/home/arpith/iisc/ase/projects/path_profiling/workspace/PathProfiler/bin/",
-				"-pp", "HelloWorld" };
-		System.out.println(Arrays.toString(arg));
+		args = viewer.parse_options(args);
 		System.out.println("in main");
 
 		if (args.length == 0) {
 			usage();
 		} else {
 			Scene.v().addBasicClass("xyz.arpith.pathprofiler.MyCounter");
-			soot.Main.main(arg);
+			soot.Main.main(args);
 		}
 	}
 
@@ -536,7 +618,7 @@ public class PathProfiler extends BodyTransformer {
 				sootArgs.add(args[++i]);
 				sootArgs.add(args[++i]);
 			} else {
-				int smpos = args[i].indexOf(':');
+				int smpos = args[i].indexOf('#');
 				if (smpos == -1) {
 					sootArgs.add(args[i]);
 				} else {
