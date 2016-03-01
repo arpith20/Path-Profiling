@@ -1,6 +1,7 @@
 package xyz.arpith.pathprofiler;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedList;
@@ -13,6 +14,8 @@ import soot.BodyTransformer;
 import soot.G;
 import soot.PackManager;
 import soot.PhaseOptions;
+import soot.Scene;
+import soot.SootClass;
 import soot.SootMethod;
 import soot.Transform;
 import soot.Unit;
@@ -59,6 +62,9 @@ public class PathProfiler extends BodyTransformer {
 	List<MyEdge> spanningTreeEdges = new ArrayList<MyEdge>();
 	List<MyEdge> chordEdges = new ArrayList<MyEdge>();
 	HashMap<MyEdge, Integer> inc = new HashMap<MyEdge, Integer>();
+
+	SootClass counterClass = null;
+	SootMethod increaseCounter, reportCounter;
 
 	public class MyEdge {
 		Unit src;
@@ -189,7 +195,16 @@ public class PathProfiler extends BodyTransformer {
 	}
 
 	protected void internalTransform(Body b, String phaseName, Map options) {
+		System.out.println(Scene.v().getSootClassPath());
 		initialize(options);
+
+		synchronized (this) {
+			if (counterClass == null) {
+				counterClass = Scene.v().loadClassAndSupport("xyz.arpith.pathprofiler.MyCounter");
+				increaseCounter = counterClass.getMethod("void increase(int)");
+				reportCounter = counterClass.getMethod("void report()");
+			}
+		}
 		SootMethod meth = b.getMethod();
 
 		if ((methodsToPrint == null) || (meth.getDeclaringClass().getName() == methodsToPrint.get(meth.getName()))) {
@@ -437,12 +452,17 @@ public class PathProfiler extends BodyTransformer {
 				+ defaultGraph + ' ' + irOptionName + ':' + defaultIR + ' ' + multipageOptionName + ":false " + ' '
 				+ briefLabelOptionName + ":false ");
 		PackManager.v().getPack("jtp").add(printTransform);
-		args = viewer.parse_options(args);
+		String[] arg = { "--cp",
+				"/home/arpith/iisc/ase/projects/path_profiling/testprogs/:/home/arpith/iisc/ase/projects/path_profiling/workspace/PathProfiler/bin/",
+				"-pp", "HelloWorld" };
+		System.out.println(Arrays.toString(arg));
 		System.out.println("in main");
+
 		if (args.length == 0) {
 			usage();
 		} else {
-			soot.Main.main(args);
+			Scene.v().addBasicClass("xyz.arpith.pathprofiler.MyCounter");
+			soot.Main.main(arg);
 		}
 	}
 
@@ -569,5 +589,6 @@ public class PathProfiler extends BodyTransformer {
 
 		G.v().out.println("Generate dot file in " + filename);
 		canvas.plot(filename);
+
 	}
 }
