@@ -73,10 +73,16 @@ public class PathProfiler extends BodyTransformer {
 	public class DAG {
 		List<MyEdge> edges;
 		List<Unit> visited;
+		List<MyEdge> backedges;
+		List<MyEdge> artificial;
+		List<MyEdge> original;
 
 		DAG() {
 			edges = new ArrayList<MyEdge>();
 			visited = new ArrayList<Unit>();
+			backedges = new ArrayList<MyEdge>();
+			artificial = new ArrayList<MyEdge>();
+			original = new ArrayList<MyEdge>();
 		}
 
 		public List<Unit> getPredsOf(Unit u) {
@@ -85,9 +91,7 @@ public class PathProfiler extends BodyTransformer {
 				if (e.tgt == u)
 					pred.add(e.src);
 			}
-			if (!pred.isEmpty())
-				return pred;
-			return null;
+			return pred;
 		}
 
 		public List<Unit> getSuccsOf(Unit u) {
@@ -96,9 +100,7 @@ public class PathProfiler extends BodyTransformer {
 				if (e.src == u)
 					succ.add(e.tgt);
 			}
-			if (!succ.isEmpty())
-				return succ;
-			return null;
+			return succ;
 		}
 
 		public void buildDAG(BriefUnitGraph cfg) {
@@ -109,10 +111,19 @@ public class PathProfiler extends BodyTransformer {
 
 				for (Unit succ : cfg.getSuccsOf(unit)) {
 					if (visited.contains(succ)) {
-						edges.add(new MyEdge(ENTRY, succ));
-						edges.add(new MyEdge(unit, EXIT));
+						backedges.add(new MyEdge(unit, succ));
+
+						MyEdge ent = new MyEdge(ENTRY, succ);
+						edges.add(ent);
+						artificial.add(ent);
+
+						MyEdge ext = new MyEdge(unit, EXIT);
+						edges.add(ext);
+						artificial.add(ext);
 					} else {
-						edges.add(new MyEdge(unit, succ));
+						MyEdge e = new MyEdge(unit, succ);
+						edges.add(e);
+						original.add(e);
 					}
 				}
 			}
@@ -245,7 +256,7 @@ public class PathProfiler extends BodyTransformer {
 		System.out.println(u5.toString());
 		System.out.println(u6.toString());
 
-		determineIncrements(cfg);
+		//determineIncrements(cfg);
 	}
 
 	protected void internalTransform(Body b, String phaseName, Map options) {
@@ -276,14 +287,12 @@ public class PathProfiler extends BodyTransformer {
 			// fabricatedata(cfg);
 
 			// iterate through all statements and initialize them correctly
-			Iterator<Unit> cfg_iterator = cfg.iterator();
-			int i = 0;
-			while (cfg_iterator.hasNext()) {
-				Unit unit = cfg_iterator.next();
 
+			int i = 0;
+			for (Unit unit : dag.visited) {
 				NodeData node = new NodeData(i++);
 
-				Iterator<Unit> succ_iterator = cfg.getSuccsOf(unit).iterator();
+				Iterator<Unit> succ_iterator = dag.getSuccsOf(unit).iterator();
 				while (succ_iterator.hasNext()) {
 					node.updateEdgeVal(succ_iterator.next(), 0); // initialize
 					// edgeValue
@@ -294,14 +303,14 @@ public class PathProfiler extends BodyTransformer {
 			}
 
 			// assign values to edges in DAG (Algo in Figure 5)
-			figure5(cfg);
+			figure5(dag);
 
-			buildSpanningTree(cfg);
-			buildChordEdges(cfg);
+			buildSpanningTree(dag);
+			buildChordEdges(dag);
 
-			determineIncrements(cfg);
+			determineIncrements(dag);
 
-			placeInstruments(cfg);
+			placeInstruments(cfg, dag);
 
 			// display
 			// displayChordEdges();
@@ -313,12 +322,11 @@ public class PathProfiler extends BodyTransformer {
 		}
 	}
 
-	public void placeInstruments(BriefUnitGraph cfg) {
+	public void placeInstruments(BriefUnitGraph cfg, DAG dag) {
 
 		// initialize all edges
-		allEdges.addAll(chordEdges);
-		allEdges.addAll(spanningTreeEdges);
-
+		allEdges.addAll(dag.original);
+		
 		// register initialization code
 		Queue<Unit> WS = new LinkedList<Unit>();
 		WS.add(ENTRY);
@@ -392,10 +400,10 @@ public class PathProfiler extends BodyTransformer {
 		return null;
 	}
 
-	public void buildChordEdges(BriefUnitGraph cfg) {
-		Iterator<Unit> cfg_iterator = cfg.iterator();
-		while (cfg_iterator.hasNext()) {
-			Unit unit = cfg_iterator.next();
+	public void buildChordEdges(DAG cfg) {
+		
+		for (Unit unit : cfg.visited) {
+			
 			List<Unit> succs = cfg.getSuccsOf(unit);
 			for (Unit succ : succs) {
 				MyEdge chord = new MyEdge(unit, succ);
@@ -411,11 +419,11 @@ public class PathProfiler extends BodyTransformer {
 			// add dummy backedge
 			NodeData nd = nodeDataHash.get(EXIT);
 			nd.edgeVal.put(ENTRY, 0);
-			chordEdges.add(new MyEdge(cfg.getTails().get(0), cfg.getHeads().get(0)));
+			chordEdges.add(new MyEdge(EXIT, ENTRY));
 		}
 	}
 
-	public void determineIncrements(BriefUnitGraph cfg) {
+	public void determineIncrements(DAG cfg) {
 		// initialize int inc variable
 		for (MyEdge e : chordEdges) {
 			inc.put(e, 0);
@@ -465,18 +473,16 @@ public class PathProfiler extends BodyTransformer {
 		}
 	}
 
-	public void buildSpanningTree(BriefUnitGraph cfg) {
+	public void buildSpanningTree(DAG cfg) {
 		DisjointSets disjointSet = new DisjointSets();
 
 		// initialize
-		Iterator<Unit> cfg_iterator = cfg.iterator();
-		while (cfg_iterator.hasNext()) {
-			Unit unit = cfg_iterator.next();
+		for (Unit unit : cfg.visited) {
 			disjointSet.create_set(unit);
 		}
 
 		if (spanningDummyBackedge) {
-			disjointSet.union(ENTRY, cfg.getTails().get(0));
+			disjointSet.union(ENTRY, EXIT);
 			nodeDataHash.get(EXIT).succSpanningNode.add(ENTRY);
 			spanningTreeEdges.add(new MyEdge(EXIT, ENTRY));
 			nodeDataHash.get(EXIT).edgeVal.put(ENTRY, 0);
@@ -488,9 +494,9 @@ public class PathProfiler extends BodyTransformer {
 
 		while (disjointSet.getNumberofDisjointSets() != 1) {
 			max = Integer.MIN_VALUE;
-			cfg_iterator = cfg.iterator();
-			while (cfg_iterator.hasNext()) {
-				Unit unit = cfg_iterator.next();
+
+			for (Unit unit : cfg.visited) {
+
 				NodeData nd = nodeDataHash.get(unit);
 				Iterator it = nd.edgeVal.entrySet().iterator();
 				while (it.hasNext()) {
@@ -517,10 +523,10 @@ public class PathProfiler extends BodyTransformer {
 		}
 	}
 
-	public void figure5(BriefUnitGraph cfg) {
+	public void figure5(DAG cfg) {
 		Queue<Unit> toProcess = new LinkedList<Unit>();
 		// initialize queue
-		toProcess.addAll(cfg.getTails());
+		toProcess.add(EXIT);
 		while (!toProcess.isEmpty()) {
 			Unit v = toProcess.remove();
 			NodeData nd = nodeDataHash.get(v);
