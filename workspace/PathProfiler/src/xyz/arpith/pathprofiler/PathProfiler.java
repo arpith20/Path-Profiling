@@ -53,6 +53,8 @@ public class PathProfiler extends BodyTransformer {
 	// name declaring the method.
 
 	Unit ENTRY;
+	Unit EXIT;
+	boolean spanningDummyBackedge;
 	HashMap<Unit, NodeData> nodeDataHash = new HashMap<Unit, NodeData>();
 	List<MyEdge> spanningTreeEdges = new ArrayList<MyEdge>();
 	List<MyEdge> chordEdges = new ArrayList<MyEdge>();
@@ -196,6 +198,8 @@ public class PathProfiler extends BodyTransformer {
 			BriefUnitGraph cfg = new BriefUnitGraph(b);
 
 			ENTRY = cfg.getHeads().get(0);
+			EXIT = cfg.getTails().get(0);
+			spanningDummyBackedge = true;
 
 			// for initial stage testing
 			// fabricatedata(cfg);
@@ -228,7 +232,7 @@ public class PathProfiler extends BodyTransformer {
 
 			// display
 			// displayChordEdges();
-			// displaySpanningTree();
+			displaySpanningTree();
 			// displayNodeDataHash(cfg);
 
 			print_cfg(b);
@@ -249,6 +253,13 @@ public class PathProfiler extends BodyTransformer {
 					}
 				}
 			}
+		}
+
+		if (!spanningDummyBackedge) {
+			// add dummy backedge
+			NodeData nd = nodeDataHash.get(EXIT);
+			nd.edgeVal.put(ENTRY, 0);
+			chordEdges.add(new MyEdge(cfg.getTails().get(0), cfg.getHeads().get(0)));
 		}
 	}
 
@@ -312,10 +323,12 @@ public class PathProfiler extends BodyTransformer {
 			disjointSet.create_set(unit);
 		}
 
-		disjointSet.union(cfg.getHeads().get(0), cfg.getTails().get(0));
-		nodeDataHash.get(cfg.getTails().get(0)).succSpanningNode.add(cfg.getHeads().get(0));
-		spanningTreeEdges.add(new MyEdge(cfg.getTails().get(0), cfg.getHeads().get(0)));
-		nodeDataHash.get(cfg.getTails().get(0)).edgeVal.put(cfg.getHeads().get(0), 0);
+		if (spanningDummyBackedge) {
+			disjointSet.union(ENTRY, cfg.getTails().get(0));
+			nodeDataHash.get(EXIT).succSpanningNode.add(ENTRY);
+			spanningTreeEdges.add(new MyEdge(EXIT, ENTRY));
+			nodeDataHash.get(EXIT).edgeVal.put(ENTRY, 0);
+		}
 
 		int max;
 		Unit ret = null;
