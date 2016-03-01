@@ -70,6 +70,56 @@ public class PathProfiler extends BodyTransformer {
 	SootClass counterClass = null;
 	SootMethod increaseCounter, reportCounter;
 
+	public class DAG {
+		List<MyEdge> edges;
+		List<Unit> visited;
+
+		DAG() {
+			edges = new ArrayList<MyEdge>();
+			visited = new ArrayList<Unit>();
+		}
+
+		public List<Unit> getPredsOf(Unit u) {
+			List<Unit> pred = new ArrayList<Unit>();
+			for (MyEdge e : edges) {
+				if (e.tgt == u)
+					pred.add(e.src);
+			}
+			if (!pred.isEmpty())
+				return pred;
+			return null;
+		}
+
+		public List<Unit> getSuccsOf(Unit u) {
+			List<Unit> succ = new ArrayList<Unit>();
+			for (MyEdge e : edges) {
+				if (e.src == u)
+					succ.add(e.tgt);
+			}
+			if (!succ.isEmpty())
+				return succ;
+			return null;
+		}
+
+		public void buildDAG(BriefUnitGraph cfg) {
+			Iterator<Unit> cfg_iterator = cfg.iterator();
+			while (cfg_iterator.hasNext()) {
+				Unit unit = cfg_iterator.next();
+				visited.add(unit);
+
+				for (Unit succ : cfg.getSuccsOf(unit)) {
+					if (visited.contains(succ)) {
+						edges.add(new MyEdge(ENTRY, succ));
+						edges.add(new MyEdge(unit, EXIT));
+					} else {
+						edges.add(new MyEdge(unit, succ));
+					}
+				}
+			}
+		}
+
+	}
+
 	public class MyEdge {
 		Unit src;
 		Unit tgt;
@@ -220,6 +270,8 @@ public class PathProfiler extends BodyTransformer {
 			EXIT = cfg.getTails().get(0);
 			spanningDummyBackedge = true;
 
+			DAG dag = new DAG();
+			dag.buildDAG(cfg);
 			// for initial stage testing
 			// fabricatedata(cfg);
 
