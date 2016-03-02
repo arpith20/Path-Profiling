@@ -391,8 +391,7 @@ public class PathProfiler extends BodyTransformer {
 			displaySpanningTree();
 			displayEdges(dag);
 
-			// DO NOT use displayNodeDataHash in case of cycles in program
-			// displayNodeDataHash(cfg);
+			displayNodeDataHash(dag);
 
 			print_cfg(b);
 			System.out.println("Exiting internalTransform");
@@ -676,7 +675,7 @@ public class PathProfiler extends BodyTransformer {
 		}
 	}
 
-	public void displayNodeDataHash(BriefUnitGraph cfg) {
+	public void displayNodeDataHash(DAG cfg) {
 		System.out.println("**************Nodedatahash****************");
 		Iterator it = nodeDataHash.entrySet().iterator();
 		while (it.hasNext()) {
