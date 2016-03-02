@@ -1,5 +1,3 @@
-package xyz.arpith.pathprofiler;
-
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
@@ -7,13 +5,13 @@ import java.util.Map;
 public class MyCounter {
 	private static HashMap<Integer, Integer> count;
 
-	public static synchronized void increase(Integer i, Integer c) {
+	public static synchronized void increase(Integer i , Integer c) {
 		Integer val = count.get(i);
 		count.put(i, val + c);
 
 	}
 
-	public static synchronized void initialize(Integer i, Integer c) {
+	public static synchronized void initialize(Integer i , Integer c) {
 		if (count == null)
 			count = new HashMap<Integer, Integer>();
 		count.put(i, c);

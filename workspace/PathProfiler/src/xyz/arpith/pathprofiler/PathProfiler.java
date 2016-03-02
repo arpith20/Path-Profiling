@@ -1,7 +1,6 @@
 package xyz.arpith.pathprofiler;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedList;
@@ -9,7 +8,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Queue;
 
-import org.jboss.util.graph.Edge;
+import soot.*;
+import soot.jimple.*;
+import soot.util.*;
+import java.util.*;
 
 import soot.Body;
 import soot.BodyTransformer;
@@ -21,10 +23,16 @@ import soot.SootClass;
 import soot.SootMethod;
 import soot.Transform;
 import soot.Unit;
+import soot.jimple.InvokeExpr;
+import soot.jimple.Jimple;
 import soot.jimple.JimpleBody;
+import soot.jimple.ReturnStmt;
+import soot.jimple.ReturnVoidStmt;
+import soot.jimple.Stmt;
 import soot.options.Options;
 import soot.toolkits.graph.BriefUnitGraph;
 import soot.toolkits.graph.DirectedGraph;
+import soot.util.Chain;
 import soot.util.cfgcmd.AltClassLoader;
 import soot.util.cfgcmd.CFGGraphType;
 import soot.util.cfgcmd.CFGIntermediateRep;
@@ -65,12 +73,11 @@ public class PathProfiler extends BodyTransformer {
 	HashMap<Unit, NodeData> nodeDataHash = new HashMap<Unit, NodeData>();
 	List<MyEdge> spanningTreeEdges = new ArrayList<MyEdge>();
 	List<MyEdge> chordEdges = new ArrayList<MyEdge>();
-	List<MyEdge> allEdges = new ArrayList<MyEdge>();
 	HashMap<MyEdge, Integer> inc = new HashMap<MyEdge, Integer>();
 	HashMap<MyEdge, String> instrument = new HashMap<MyEdge, String>();
 
 	SootClass counterClass = null;
-	SootMethod increaseCounter, reportCounter;
+	SootMethod increaseCounter, reportCounter, initializeCounter;
 
 	public class DAG {
 		List<MyEdge> edges;
@@ -298,11 +305,33 @@ public class PathProfiler extends BodyTransformer {
 		synchronized (this) {
 			if (counterClass == null) {
 				counterClass = Scene.v().loadClassAndSupport("xyz.arpith.pathprofiler.MyCounter");
-				increaseCounter = counterClass.getMethod("void increase(int)");
+				increaseCounter = counterClass.getMethod("void increase(java.lang.Integer,java.lang.Integer)");
+				initializeCounter = counterClass.getMethod("void initialize(java.lang.Integer,java.lang.Integer)");
 				reportCounter = counterClass.getMethod("void report()");
 			}
 		}
 		SootMethod meth = b.getMethod();
+
+		// Instrumentation to display results
+		String signature = meth.getSubSignature();
+		System.out.println("Signature: " + signature);
+		boolean isMain = signature.equals("void main(java.lang.String[])");
+		if (isMain) {
+			Chain units = b.getUnits();
+			Iterator stmtIt = units.snapshotIterator();
+
+			while (stmtIt.hasNext()) {
+				Stmt stmt = (Stmt) stmtIt.next();
+
+				// check if the instruction is a return with/without value
+				if ((stmt instanceof ReturnStmt) || (stmt instanceof ReturnVoidStmt)) {
+
+					InvokeExpr reportExpr = Jimple.v().newStaticInvokeExpr(reportCounter.makeRef());
+					Stmt reportStmt = Jimple.v().newInvokeStmt(reportExpr);
+					units.insertBefore(reportStmt, stmt);
+				}
+			}
+		}
 
 		if ((methodsToPrint == null) || (meth.getDeclaringClass().getName() == methodsToPrint.get(meth.getName()))) {
 			Body body = ir.getBody((JimpleBody) b);
@@ -347,13 +376,36 @@ public class PathProfiler extends BodyTransformer {
 			else
 				failSafePlaceInstruments(cfg, dag);
 
+			placeInstrumentsToClass();
+
 			// display
-			// displayChordEdges();
+			displayChordEdges();
 			displaySpanningTree();
+			displayEdges(dag);
 			// displayNodeDataHash(cfg);
 
 			print_cfg(b);
 			System.out.println("Exiting internalTransform");
+		}
+	}
+
+	public void displayEdges(DAG dag) {
+		System.out.println("&&&&&&&&&&&&&DAG Edges&&&&&&&&&&&&&&&&&");
+
+		for (MyEdge e : dag.edges) {
+			System.out.println("Edge: " + e.src + " -> " + e.tgt);
+		}
+
+		System.out.println("&&&&&&&&&&&&&&&&&&&&&&&&&");
+	}
+
+	public void placeInstrumentsToClass() {
+		Iterator it = instrument.entrySet().iterator();
+		while (it.hasNext()) {
+			Map.Entry pair = (Map.Entry) it.next();
+			MyEdge edge = (MyEdge) pair.getKey();
+			String val = (String) pair.getValue();
+			System.out.println("Instrument2:" + edge.src + "************" + edge.tgt + "&&" + val);
 		}
 	}
 
@@ -389,19 +441,9 @@ public class PathProfiler extends BodyTransformer {
 			}
 
 		}
-		Iterator it = instrument.entrySet().iterator();
-		while (it.hasNext()) {
-			Map.Entry pair = (Map.Entry) it.next();
-			MyEdge edge = (MyEdge) pair.getKey();
-			String val = (String) pair.getValue();
-			System.out.println("Instrument:" + edge.src + "************" + edge.tgt + "&&" + val);
-		}
 	}
 
 	public void placeInstruments(BriefUnitGraph cfg, DAG dag) {
-
-		// initialize all edges
-		allEdges.addAll(dag.original);
 
 		// register initialization code
 		Queue<Unit> WS = new LinkedList<Unit>();
@@ -410,7 +452,6 @@ public class PathProfiler extends BodyTransformer {
 		while (!WS.isEmpty()) {
 			Unit v = WS.remove();
 			List<Unit> succ = cfg.getSuccsOf(v);
-			System.out.println(v);
 			// if (v == EXIT) {
 			// succ.add(ENTRY);
 			// }
@@ -437,7 +478,6 @@ public class PathProfiler extends BodyTransformer {
 			// pred.add(EXIT);
 			// }
 			for (Unit v : pred) {
-				System.out.println(v + "^^^" + w);
 				MyEdge e = retriveEdge(v, w, dag);
 				if (e.isContainedIn(chordEdges)) {
 					Integer inc_e = inc.get(e);
@@ -455,12 +495,11 @@ public class PathProfiler extends BodyTransformer {
 			}
 		}
 
-		Iterator it = instrument.entrySet().iterator();
-		while (it.hasNext()) {
-			Map.Entry pair = (Map.Entry) it.next();
-			MyEdge edge = (MyEdge) pair.getKey();
-			String val = (String) pair.getValue();
-			System.out.println("Instrument:" + edge.src + "************" + edge.tgt + "&&" + val);
+		// register increment code
+		for (MyEdge c : chordEdges) {
+			if (instrument.get(c) == null) {
+				instrument.put(c, "r=r+" + inc.get(c));
+			}
 		}
 	}
 
@@ -487,12 +526,12 @@ public class PathProfiler extends BodyTransformer {
 			}
 		}
 
-		if (!spanningDummyBackedge) {
-			// add dummy backedge
-			NodeData nd = nodeDataHash.get(EXIT);
-			nd.edgeVal.put(ENTRY, 0);
-			chordEdges.add(new MyEdge(EXIT, ENTRY));
-		}
+		// if (!spanningDummyBackedge) {
+		// // add dummy backedge
+		// NodeData nd = nodeDataHash.get(EXIT);
+		// nd.edgeVal.put(ENTRY, 0);
+		// chordEdges.add(new MyEdge(EXIT, ENTRY));
+		// }
 	}
 
 	public void determineIncrements(DAG cfg) {
@@ -683,6 +722,15 @@ public class PathProfiler extends BodyTransformer {
 			usage();
 		} else {
 			Scene.v().addBasicClass("xyz.arpith.pathprofiler.MyCounter");
+			Scene.v().addBasicClass("java.util.HashMap");
+			Scene.v().addBasicClass("java.util.HashMap$Node");
+			Scene.v().addBasicClass("java.util.function.Function");
+			Scene.v().addBasicClass("java.util.function.BiFunction");
+			Scene.v().addBasicClass("java.util.function.BiConsumer");
+			Scene.v().addBasicClass("java.util.HashMap$TreeNode");
+			Scene.v().addBasicClass("java.lang.invoke.SerializedLambda");
+			Scene.v().addBasicClass("java.util.function.Predicate");
+			Scene.v().addBasicClass("java.util.stream.Stream");
 			soot.Main.main(args);
 		}
 	}
