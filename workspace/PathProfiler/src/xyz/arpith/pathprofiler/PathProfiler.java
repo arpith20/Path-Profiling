@@ -337,7 +337,44 @@ public class PathProfiler extends BodyTransformer {
 	}
 
 	public void failSafePlaceInstruments(BriefUnitGraph cfg, DAG dag) {
+		List<MyEdge> remaining = new ArrayList<MyEdge>();
+		remaining.addAll(dag.edges);
+		for (Unit tgt : cfg.getTails()) {
+			for (Unit src : cfg.getPredsOf(tgt)) {
+				MyEdge e = retriveEdge(src, tgt, dag);
+				Integer val = inc.get(e);
+				if (val != null) {
+					instrument.put(e, "chord[r+" + val + "]++");
+				} else {
+					instrument.put(e, "chord[r]++");
+				}
+				remaining.remove(e);
+			}
+		}
+		for (MyEdge e : remaining) {
+			Integer val = inc.get(e);
+			if (val != null) {
+				instrument.put(e, "r=r+" + val);
+			}
+		}
 
+		for (Unit succ : cfg.getSuccsOf(ENTRY)) {
+			MyEdge e = retriveEdge(ENTRY, succ, dag);
+			Integer val = inc.get(e);
+			if (val != null) {
+				instrument.put(e, "r=" + val);
+			} else {
+				instrument.put(e, "r=0");
+			}
+
+		}
+		Iterator it = instrument.entrySet().iterator();
+		while (it.hasNext()) {
+			Map.Entry pair = (Map.Entry) it.next();
+			MyEdge edge = (MyEdge) pair.getKey();
+			String val = (String) pair.getValue();
+			System.out.println("Instrument:" + edge.src + "************" + edge.tgt + "&&" + val);
+		}
 	}
 
 	public void placeInstruments(BriefUnitGraph cfg, DAG dag) {
@@ -419,7 +456,7 @@ public class PathProfiler extends BodyTransformer {
 
 			List<Unit> succs = cfg.getSuccsOf(unit);
 			for (Unit succ : succs) {
-				MyEdge chord = new MyEdge(unit, succ);
+				MyEdge chord = retriveEdge(unit, succ, cfg);
 				if (!chord.isContainedIn(spanningTreeEdges)) {
 					if (!chord.isContainedIn(chordEdges)) {
 						chordEdges.add(chord);
@@ -450,19 +487,6 @@ public class PathProfiler extends BodyTransformer {
 			System.out.println("Increment: " + e.src + "&&&&" + e.tgt + "&&&&&&" + i);
 		}
 
-		// if increments are there in the extra edges from exit(1) to EXIT
-		for (MyEdge e : cfg.singleexit) {
-			System.out.println(e.src + " " + e.tgt);
-			List<Unit> pred = cfg.getPredsOf(e.src);
-			System.out.println(pred.toString());
-			for (Unit u : pred) {
-				System.out.println(u.toString());
-				Integer val = 0;
-				if (inc.get(e) != null)
-					val = inc.get(e) + inc.get(retriveEdge(u, e.src, cfg));
-				inc.put(retriveEdge(u, e.src, cfg), val);
-			}
-		}
 	}
 
 	public void DFS(Integer events, Unit v, MyEdge e) {
@@ -551,7 +575,7 @@ public class PathProfiler extends BodyTransformer {
 				}
 			}
 			disjointSet.union(max_unit, max_unitSucc);
-			spanningTreeEdges.add(new MyEdge(max_unit, max_unitSucc));
+			spanningTreeEdges.add(retriveEdge(max_unit, max_unitSucc, cfg));
 			nodeDataHash.get(max_unit).succSpanningNode.add(max_unitSucc);
 			// System.out.println("*" + max_unit + "**********" + max_unitSucc +
 			// "-" + max);
