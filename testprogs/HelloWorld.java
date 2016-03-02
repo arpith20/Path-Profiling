@@ -38,4 +38,12 @@ class HelloWorld{
 		x=x+5;
 		System.out.println(x);
 	}
+
+	public int multi_ret(int x)
+	{
+		if(x==1)
+			return 2;
+		else
+			return 3;
+	}
 }

@@ -76,6 +76,7 @@ public class PathProfiler extends BodyTransformer {
 		List<MyEdge> backedges;
 		List<MyEdge> artificial;
 		List<MyEdge> original;
+		List<MyEdge> singleexit;
 
 		DAG() {
 			edges = new ArrayList<MyEdge>();
@@ -83,6 +84,7 @@ public class PathProfiler extends BodyTransformer {
 			backedges = new ArrayList<MyEdge>();
 			artificial = new ArrayList<MyEdge>();
 			original = new ArrayList<MyEdge>();
+			singleexit = new ArrayList<MyEdge>();
 		}
 
 		public List<Unit> getPredsOf(Unit u) {
@@ -104,6 +106,15 @@ public class PathProfiler extends BodyTransformer {
 		}
 
 		public void buildDAG(BriefUnitGraph cfg) {
+
+			// ensure single exit
+			if (cfg.getTails().size() > 1) {
+				for (int i = 1; i < cfg.getTails().size(); i++) {
+					MyEdge e = new MyEdge(cfg.getTails().get(i), EXIT);
+					edges.add(e);
+					singleexit.add(e);
+				}
+			}
 			Iterator<Unit> cfg_iterator = cfg.iterator();
 			while (cfg_iterator.hasNext()) {
 				Unit unit = cfg_iterator.next();
@@ -256,7 +267,7 @@ public class PathProfiler extends BodyTransformer {
 		System.out.println(u5.toString());
 		System.out.println(u6.toString());
 
-		//determineIncrements(cfg);
+		// determineIncrements(cfg);
 	}
 
 	protected void internalTransform(Body b, String phaseName, Map options) {
@@ -310,7 +321,10 @@ public class PathProfiler extends BodyTransformer {
 
 			determineIncrements(dag);
 
-			placeInstruments(cfg, dag);
+			if (cfg.getTails().size() == 1)
+				placeInstruments(cfg, dag);
+			else
+				failSafePlaceInstruments(cfg, dag);
 
 			// display
 			// displayChordEdges();
@@ -322,14 +336,19 @@ public class PathProfiler extends BodyTransformer {
 		}
 	}
 
+	public void failSafePlaceInstruments(BriefUnitGraph cfg, DAG dag) {
+
+	}
+
 	public void placeInstruments(BriefUnitGraph cfg, DAG dag) {
 
 		// initialize all edges
 		allEdges.addAll(dag.original);
-		
+
 		// register initialization code
 		Queue<Unit> WS = new LinkedList<Unit>();
 		WS.add(ENTRY);
+
 		while (!WS.isEmpty()) {
 			Unit v = WS.remove();
 			List<Unit> succ = cfg.getSuccsOf(v);
@@ -337,7 +356,7 @@ public class PathProfiler extends BodyTransformer {
 			// succ.add(ENTRY);
 			// }
 			for (Unit w : succ) {
-				MyEdge e = retriveEdge(v, w);
+				MyEdge e = retriveEdge(v, w, dag);
 				if (e.isContainedIn(chordEdges)) {
 					String value = "r=" + inc.get(e);
 					instrument.put(e, value);
@@ -354,12 +373,13 @@ public class PathProfiler extends BodyTransformer {
 		WS.add(EXIT);
 		while (!WS.isEmpty()) {
 			Unit w = WS.remove();
-			List<Unit> pred = cfg.getPredsOf(w);
+			List<Unit> pred = dag.getPredsOf(w);
 			// if (w == ENTRY) {
 			// pred.add(EXIT);
 			// }
 			for (Unit v : pred) {
-				MyEdge e = retriveEdge(v, w);
+				System.out.println(v + "^^^" + w);
+				MyEdge e = retriveEdge(v, w, dag);
 				if (e.isContainedIn(chordEdges)) {
 					Integer inc_e = inc.get(e);
 					if (instrument.get(e) != null && instrument.get(e).equals("r=" + inc_e)) {
@@ -376,13 +396,6 @@ public class PathProfiler extends BodyTransformer {
 			}
 		}
 
-		// register increment code
-		for (MyEdge c : chordEdges) {
-			if (instrument.get(c) == null) {
-				instrument.put(c, "r=r+" + inc.get(c));
-			}
-		}
-
 		Iterator it = instrument.entrySet().iterator();
 		while (it.hasNext()) {
 			Map.Entry pair = (Map.Entry) it.next();
@@ -392,8 +405,8 @@ public class PathProfiler extends BodyTransformer {
 		}
 	}
 
-	public MyEdge retriveEdge(Unit src, Unit tgt) {
-		for (MyEdge e : allEdges) {
+	public MyEdge retriveEdge(Unit src, Unit tgt, DAG dag) {
+		for (MyEdge e : dag.edges) {
 			if (e.src == src && e.tgt == tgt)
 				return e;
 		}
@@ -401,9 +414,9 @@ public class PathProfiler extends BodyTransformer {
 	}
 
 	public void buildChordEdges(DAG cfg) {
-		
+
 		for (Unit unit : cfg.visited) {
-			
+
 			List<Unit> succs = cfg.getSuccsOf(unit);
 			for (Unit succ : succs) {
 				MyEdge chord = new MyEdge(unit, succ);
@@ -435,6 +448,20 @@ public class PathProfiler extends BodyTransformer {
 			Integer i = inc.get(e) + Events(e);
 			inc.put(e, i);
 			System.out.println("Increment: " + e.src + "&&&&" + e.tgt + "&&&&&&" + i);
+		}
+
+		// if increments are there in the extra edges from exit(1) to EXIT
+		for (MyEdge e : cfg.singleexit) {
+			System.out.println(e.src + " " + e.tgt);
+			List<Unit> pred = cfg.getPredsOf(e.src);
+			System.out.println(pred.toString());
+			for (Unit u : pred) {
+				System.out.println(u.toString());
+				Integer val = 0;
+				if (inc.get(e) != null)
+					val = inc.get(e) + inc.get(retriveEdge(u, e.src, cfg));
+				inc.put(retriveEdge(u, e.src, cfg), val);
+			}
 		}
 	}
 
@@ -486,6 +513,14 @@ public class PathProfiler extends BodyTransformer {
 			nodeDataHash.get(EXIT).succSpanningNode.add(ENTRY);
 			spanningTreeEdges.add(new MyEdge(EXIT, ENTRY));
 			nodeDataHash.get(EXIT).edgeVal.put(ENTRY, 0);
+		}
+
+		// add edges which ensure single exit to spanning tree
+		for (MyEdge e : cfg.singleexit) {
+			disjointSet.union(e.src, EXIT);
+			nodeDataHash.get(e.src).succSpanningNode.add(EXIT);
+			spanningTreeEdges.add(e);
+			nodeDataHash.get(e.src).edgeVal.put(EXIT, 0);
 		}
 
 		int max;
