@@ -1,5 +1,8 @@
 package xyz.arpith.pathprofiler;
 
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -65,6 +68,8 @@ public class PathProfiler extends BodyTransformer {
 	Unit ENTRY;
 	Unit EXIT;
 	boolean spanningDummyBackedge;
+	boolean regeneratePath = true;
+
 	HashMap<Unit, NodeData> nodeDataHash = new HashMap<Unit, NodeData>();
 	List<MyEdge> spanningTreeEdges = new ArrayList<MyEdge>();
 	List<MyEdge> chordEdges = new ArrayList<MyEdge>();
@@ -319,83 +324,133 @@ public class PathProfiler extends BodyTransformer {
 				initializeCounter = counterClass.getMethod("void initialize(java.lang.Integer,java.lang.Integer)");
 				reportCounter = counterClass.getMethod("void report()");
 			}
-		}
-		SootMethod meth = b.getMethod();
 
-		// Instrumentation to display results
-		String signature = meth.getSubSignature();
-		System.out.println("Signature: " + signature);
-		boolean isMain = signature.equals("void main(java.lang.String[])");
-		if (isMain) {
-			Chain units = b.getUnits();
-			Iterator stmtIt = units.snapshotIterator();
+			SootMethod meth = b.getMethod();
 
-			while (stmtIt.hasNext()) {
-				Stmt stmt = (Stmt) stmtIt.next();
+			// Instrumentation to display results
+			String signature = meth.getSubSignature();
+			System.out.println("Signature: " + signature);
+			boolean isMain = signature.equals("void main(java.lang.String[])");
+			if (isMain) {
+				Chain units = b.getUnits();
+				Iterator stmtIt = units.snapshotIterator();
 
-				// check if the instruction is a return with/without value
-				if ((stmt instanceof ReturnStmt) || (stmt instanceof ReturnVoidStmt)) {
+				while (stmtIt.hasNext()) {
+					Stmt stmt = (Stmt) stmtIt.next();
 
-					InvokeExpr reportExpr = Jimple.v().newStaticInvokeExpr(reportCounter.makeRef());
-					Stmt reportStmt = Jimple.v().newInvokeStmt(reportExpr);
-					units.insertBefore(reportStmt, stmt);
+					// check if the instruction is a return with/without value
+					if ((stmt instanceof ReturnStmt) || (stmt instanceof ReturnVoidStmt)) {
+
+						InvokeExpr reportExpr = Jimple.v().newStaticInvokeExpr(reportCounter.makeRef());
+						Stmt reportStmt = Jimple.v().newInvokeStmt(reportExpr);
+						units.insertBefore(reportStmt, stmt);
+					}
 				}
+			}
+
+			if ((methodsToPrint == null)
+					|| (meth.getDeclaringClass().getName() == methodsToPrint.get(meth.getName()))) {
+				Body body = ir.getBody((JimpleBody) b);
+				// System.out.println("This is the IR: \n" + body.toString());
+				BriefUnitGraph cfg = new BriefUnitGraph(b);
+
+				ENTRY = cfg.getHeads().get(0);
+				EXIT = cfg.getTails().get(0);
+				spanningDummyBackedge = true;
+
+				DAG dag = new DAG();
+				dag.buildDAG(cfg);
+				// for initial stage testing
+				// fabricatedata(cfg);
+
+				// iterate through all statements and initialize them correctly
+
+				int i = 0;
+				for (Unit unit : dag.visited) {
+					NodeData node = new NodeData(i++);
+
+					Iterator<Unit> succ_iterator = dag.getSuccsOf(unit).iterator();
+					while (succ_iterator.hasNext()) {
+						// initialize edgeValue count to 0
+						node.updateEdgeVal(succ_iterator.next(), 0);
+					}
+					nodeDataHash.put(unit, node);
+				}
+
+				// assign values to edges in DAG (Algo in Figure 5)
+				figure5(dag);
+
+				buildSpanningTree(dag);
+				buildChordEdges(dag);
+
+				determineIncrements(dag);
+
+				if (cfg.getTails().size() == 1)
+					placeInstruments(cfg, dag);
+				else
+					failSafePlaceInstruments(cfg, dag);
+
+				placeInstrumentsToClass();
+
+				// display
+				displayChordEdges();
+				displaySpanningTree();
+				displayEdges(dag);
+
+				displayNodeDataHash(dag);
+
+				print_cfg(b);
+				BufferedReader br = new BufferedReader(new InputStreamReader(System.in));
+				if (regeneratePath) {
+					System.out.print("Enter count");
+					try {
+						String s = br.readLine();
+						Integer path_value = Integer.parseInt(s);
+						regeneratePathFunc(path_value, dag);
+					} catch (IOException e) {
+						e.printStackTrace();
+					}
+				}
+				System.out.println("Exiting internalTransform");
+			}
+		}
+	}
+
+	public void regeneratePathFunc(Integer pathval, DAG dag) {
+		Integer val = pathval;
+		Queue<Unit> queue = new LinkedList();
+
+		System.out.println("regenerating path");
+
+		List<Unit> allnodes = new ArrayList<Unit>();
+		allnodes.addAll(dag.visited);
+
+		queue.add(ENTRY);
+		while (!queue.isEmpty()) {
+			Unit cur = queue.remove();
+			NodeData nd = nodeDataHash.get(cur);
+			Integer max = Integer.MIN_VALUE;
+			Unit next = null;
+			for (Unit u : dag.getSuccsOf(cur)) {
+				Integer edgeval = nd.edgeVal.get(u);
+				if (edgeval > max) {
+					if (edgeval <= val) {
+						max = edgeval;
+						next = u;
+					}
+				}
+			}
+			if (next != null) {
+				queue.add(next);
+
+				MyEdge e = retriveEdge(cur, next, dag);
+				System.out.println("RegereratePath: " + e.src + " --> " + e.tgt);
+
+				val = val - max;
+				next = null;
 			}
 		}
 
-		if ((methodsToPrint == null) || (meth.getDeclaringClass().getName() == methodsToPrint.get(meth.getName()))) {
-			Body body = ir.getBody((JimpleBody) b);
-			// System.out.println("This is the IR: \n" + body.toString());
-			BriefUnitGraph cfg = new BriefUnitGraph(b);
-
-			ENTRY = cfg.getHeads().get(0);
-			EXIT = cfg.getTails().get(0);
-			spanningDummyBackedge = true;
-
-			DAG dag = new DAG();
-			dag.buildDAG(cfg);
-			// for initial stage testing
-			// fabricatedata(cfg);
-
-			// iterate through all statements and initialize them correctly
-
-			int i = 0;
-			for (Unit unit : dag.visited) {
-				NodeData node = new NodeData(i++);
-
-				Iterator<Unit> succ_iterator = dag.getSuccsOf(unit).iterator();
-				while (succ_iterator.hasNext()) {
-					// initialize edgeValue count to 0
-					node.updateEdgeVal(succ_iterator.next(), 0);
-				}
-				nodeDataHash.put(unit, node);
-			}
-
-			// assign values to edges in DAG (Algo in Figure 5)
-			figure5(dag);
-
-			buildSpanningTree(dag);
-			buildChordEdges(dag);
-
-			determineIncrements(dag);
-
-			if (cfg.getTails().size() == 1)
-				placeInstruments(cfg, dag);
-			else
-				failSafePlaceInstruments(cfg, dag);
-
-			placeInstrumentsToClass();
-
-			// display
-			displayChordEdges();
-			displaySpanningTree();
-			displayEdges(dag);
-
-			displayNodeDataHash(dag);
-
-			print_cfg(b);
-			System.out.println("Exiting internalTransform");
-		}
 	}
 
 	public void displayEdges(DAG dag) {
