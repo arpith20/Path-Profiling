@@ -8,11 +8,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Queue;
 
-import soot.*;
-import soot.jimple.*;
-import soot.util.*;
-import java.util.*;
-
 import soot.Body;
 import soot.BodyTransformer;
 import soot.G;
@@ -148,6 +143,19 @@ public class PathProfiler extends BodyTransformer {
 					if (formsCycle(unit, succ, cfg)) {
 						System.out.println("!@#$$^$&^#%^$@%@$%#$%$^&%&%*^$%W@$#@$#@$%^#");
 						System.out.println(unit + " " + succ);
+
+						// handle backedge
+						List<Unit> alt_succs = cfg.getSuccsOf(succ);
+						for (Unit alt_succ : alt_succs) {
+							if (!formsCycle(unit, alt_succ, cfg)) {
+								if (retriveEdge(unit, alt_succ, this) == null) {
+									MyEdge e = new MyEdge(unit, alt_succ);
+									edges.add(e);
+									backedges.add(e);
+								}
+							}
+						}
+
 						if (backedgeSupport) {
 							backedges.add(new MyEdge(unit, succ));
 
@@ -160,9 +168,11 @@ public class PathProfiler extends BodyTransformer {
 							artificial.add(ext);
 						}
 					} else {
-						MyEdge e = new MyEdge(unit, succ);
-						edges.add(e);
-						original.add(e);
+						if (retriveEdge(unit, succ, this) == null) {
+							MyEdge e = new MyEdge(unit, succ);
+							edges.add(e);
+							original.add(e);
+						}
 					}
 				}
 			}
@@ -355,10 +365,8 @@ public class PathProfiler extends BodyTransformer {
 
 				Iterator<Unit> succ_iterator = dag.getSuccsOf(unit).iterator();
 				while (succ_iterator.hasNext()) {
-					node.updateEdgeVal(succ_iterator.next(), 0); // initialize
-					// edgeValue
-					// count to
-					// 0
+					// initialize edgeValue count to 0
+					node.updateEdgeVal(succ_iterator.next(), 0);
 				}
 				nodeDataHash.put(unit, node);
 			}
@@ -382,6 +390,8 @@ public class PathProfiler extends BodyTransformer {
 			displayChordEdges();
 			displaySpanningTree();
 			displayEdges(dag);
+
+			// DO NOT use displayNodeDataHash in case of cycles in program
 			// displayNodeDataHash(cfg);
 
 			print_cfg(b);

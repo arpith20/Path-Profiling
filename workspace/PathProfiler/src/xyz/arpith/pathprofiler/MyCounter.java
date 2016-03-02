@@ -1,8 +1,6 @@
 package xyz.arpith.pathprofiler;
 
 import java.util.HashMap;
-import java.util.Iterator;
-import java.util.Map;
 
 public class MyCounter {
 	private static HashMap<Integer, Integer> count;
