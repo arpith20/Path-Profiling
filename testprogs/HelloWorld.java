@@ -46,4 +46,12 @@ class HelloWorld{
 		else
 			return 3;
 	}
+
+	public void one_while(int x)
+	{
+		while(x==5){
+			x++;
+		}
+		System.out.println(x);
+	}
 }

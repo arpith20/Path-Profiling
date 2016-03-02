@@ -49,6 +49,8 @@ public class PathProfiler extends BodyTransformer {
 	private static final String multipageOptionName = "multipages";
 	private static final String briefLabelOptionName = "brief";
 
+	public boolean backedgeSupport = false;
+
 	private CFGGraphType graphtype;
 	private CFGIntermediateRep ir;
 	private CFGToDotGraph drawer;
@@ -105,6 +107,21 @@ public class PathProfiler extends BodyTransformer {
 			return succ;
 		}
 
+		public boolean formsCycle(Unit src, Unit tgt, BriefUnitGraph cfg) {
+			Queue<Unit> queue = new LinkedList();
+			queue.add(tgt);
+			while (!queue.isEmpty()) {
+				Unit u = queue.remove();
+				List<Unit> succs = getSuccsOf(u);
+				for (Unit succ : succs) {
+					if (src == succ)
+						return true;
+					queue.add(succ);
+				}
+			}
+			return false;
+		}
+
 		public void buildDAG(BriefUnitGraph cfg) {
 
 			// ensure single exit
@@ -121,16 +138,20 @@ public class PathProfiler extends BodyTransformer {
 				visited.add(unit);
 
 				for (Unit succ : cfg.getSuccsOf(unit)) {
-					if (visited.contains(succ)) {
-						backedges.add(new MyEdge(unit, succ));
+					if (formsCycle(unit, succ, cfg)) {
+						System.out.println("!@#$$^$&^#%^$@%@$%#$%$^&%&%*^$%W@$#@$#@$%^#");
+						System.out.println(unit + " " + succ);
+						if (backedgeSupport) {
+							backedges.add(new MyEdge(unit, succ));
 
-						MyEdge ent = new MyEdge(ENTRY, succ);
-						edges.add(ent);
-						artificial.add(ent);
+							MyEdge ent = new MyEdge(ENTRY, succ);
+							edges.add(ent);
+							artificial.add(ent);
 
-						MyEdge ext = new MyEdge(unit, EXIT);
-						edges.add(ext);
-						artificial.add(ext);
+							MyEdge ext = new MyEdge(unit, EXIT);
+							edges.add(ext);
+							artificial.add(ext);
+						}
 					} else {
 						MyEdge e = new MyEdge(unit, succ);
 						edges.add(e);
@@ -389,6 +410,7 @@ public class PathProfiler extends BodyTransformer {
 		while (!WS.isEmpty()) {
 			Unit v = WS.remove();
 			List<Unit> succ = cfg.getSuccsOf(v);
+			System.out.println(v);
 			// if (v == EXIT) {
 			// succ.add(ENTRY);
 			// }
