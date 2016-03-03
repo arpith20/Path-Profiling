@@ -8,6 +8,11 @@ public class MyCounter {
 	private static HashMap<String, HashMap<Integer, Integer>> count;
 	private static HashMap<String, Integer> r;
 
+	/*
+	 * Increment the value of r for a given method.
+	 * 
+	 * All data is present in input, which is formatted as 'inc:val#method'
+	 */
 	public static synchronized void increase(String input) {
 		String method = input.split("#")[1];
 		String data = input.split("#")[0];
@@ -22,6 +27,11 @@ public class MyCounter {
 
 	}
 
+	/*
+	 * Initialize the value of r for a given method.
+	 * 
+	 * All data is present in input, which is formatted as 'ini:val#method'
+	 */
 	public static synchronized void initialize(String input) {
 		String method = input.split("#")[1];
 		String data = input.split("#")[0];
@@ -35,6 +45,16 @@ public class MyCounter {
 		r.put(method, val);
 	}
 
+	/*
+	 * Increment value of count.
+	 * 
+	 * All data is present in input, which is formatted as 'count:[x or
+	 * r]:val#method'
+	 * 
+	 * x-> count[val]++
+	 * 
+	 * r-> count[r+val]++
+	 */
 	public static synchronized void setCount(String input) {
 		String method = input.split("#")[1];
 		String data = input.split("#")[0];

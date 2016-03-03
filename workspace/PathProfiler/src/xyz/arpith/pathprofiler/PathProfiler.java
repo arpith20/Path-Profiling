@@ -1,8 +1,11 @@
 package xyz.arpith.pathprofiler;
 
 import java.io.BufferedReader;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.io.PrintStream;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -21,7 +24,6 @@ import soot.SootClass;
 import soot.SootMethod;
 import soot.Transform;
 import soot.Unit;
-import soot.jimple.IntConstant;
 import soot.jimple.InvokeExpr;
 import soot.jimple.Jimple;
 import soot.jimple.JimpleBody;
@@ -48,8 +50,21 @@ public class PathProfiler extends BodyTransformer {
 
 	Unit ENTRY; // Entry node of the graph
 	Unit EXIT; // Exit node of the graph
-	boolean spanningDummyBackedge;
+	boolean spanningDummyBackedge; // makes the backedge a part of spanning tree
+	boolean useFailSafe = false; // use failsafe instrumentation technique.
+									// see failSafePlaceInstruments()
+
+	/*
+	 * This allows the user to input a path sum for which the this returns the
+	 * path taken by the program
+	 */
 	boolean regeneratePath = false;
+
+	boolean placeInst = true; // Specify whether you want to modify the class
+								// files. Use with caution.
+
+	static boolean printToFile = false; // commenting such obvious things is an
+	// overkill :D
 
 	// Stores metadata (NodeData) for each unit in CFG
 	HashMap<Unit, NodeData> nodeDataHash = new HashMap<Unit, NodeData>();
@@ -98,8 +113,14 @@ public class PathProfiler extends BodyTransformer {
 		List<MyEdge> edges; // Stores all edges in DAG
 		List<Unit> visited; // Stores visited units
 		List<MyEdge> backedges; // Stores only backedges
-		List<MyEdge> artificial;// Stores artificial edges (Edges that were
-								// artificially added)
+
+		/*
+		 * Stores artificial edges (Edges that were artificially from entry ->
+		 * w; v->exit; here v->w is a backedge)
+		 */
+		HashMap<MyEdge, MyEdge> artificial;
+		List<MyEdge> artificial_list; // stores same data as above, except the
+										// actual backedge
 		List<MyEdge> original;// Stores original edges in CFG
 
 		/*
@@ -114,7 +135,8 @@ public class PathProfiler extends BodyTransformer {
 			edges = new ArrayList<MyEdge>();
 			visited = new ArrayList<Unit>();
 			backedges = new ArrayList<MyEdge>();
-			artificial = new ArrayList<MyEdge>();
+			artificial = new HashMap<MyEdge, MyEdge>();
+			artificial_list = new ArrayList<MyEdge>();
 			original = new ArrayList<MyEdge>();
 			singleexit = new ArrayList<MyEdge>();
 		}
@@ -182,52 +204,63 @@ public class PathProfiler extends BodyTransformer {
 
 				for (Unit succ : cfg.getSuccsOf(unit)) {
 					if (formsCycle(unit, succ, cfg)) {
-						System.out.println("!@#$$^$&^#%^$@%@$%#$%$^&%&%*^$%W@$#@$#@$%^#");
-						System.out.println(unit + " " + succ);
+						// '*' helps me identify that the given method contains
+						// a
+						// backedge
+						System.out.println("*");
+						// System.out.println(unit + " " + succ);
 
 						/*
-						 * To use method given in paper, uncomment the following
-						 * lines
+						 * To use alternate method, comment the following lines
+						 * and uncomment the other
 						 */
-						// MyEdge back = new MyEdge(unit, succ);
-						// backedges.add(back);
-						// instrument.put(back, "count[r]++; r=0;");
-						// instrument_encoded.put(back, "count:r:0");
-						// instrument_encoded.put(back, "ini:0");
+						MyEdge back = new MyEdge(unit, succ);
+						backedges.add(back);
+						instrument.put(back, "r=0; count[r]++; ");
+						instrument_encoded.put(back, "count:r:0");
+						instrument_encoded.put(back, "ini:0");
+
+						MyEdge ent = new MyEdge(ENTRY, succ);
+						edges.add(ent);
+						artificial.put(ent, back);
+						artificial_list.add(ent);
+
+						MyEdge ext = new MyEdge(unit, EXIT);
+						edges.add(ext);
+						artificial.put(ext, back);
+						artificial_list.add(ext);
+
+						useFailSafe = true;
+
+						/*
+						 * legacy code. Kept it; just in case
+						 */
+						// // handle backedge
+						// Queue<Unit> queue = new LinkedList();
+						// MyEdge e = null;
+						// queue.add(succ);
+						// while (!queue.isEmpty()) {
+						// Unit u = queue.remove();
+						// List<Unit> alt_succs = cfg.getSuccsOf(u);
+						// for (Unit alt_succ : alt_succs) {
+						// queue.add(alt_succ);
+						// if (!formsCycle(unit, alt_succ, cfg)) {
+						// if (retriveEdge(unit, alt_succ, this) == null) {
+						// e = new MyEdge(unit, alt_succ);
+						// edges.add(e);
+						// backedges.add(e);
 						//
-						// MyEdge ent = new MyEdge(ENTRY, succ);
-						// edges.add(ent);
-						// artificial.add(ent);
-						//
-						// MyEdge ext = new MyEdge(unit, EXIT);
-						// edges.add(ext);
-						// artificial.add(ext);
-
-						// handle backedge
-						Queue<Unit> queue = new LinkedList();
-
-						queue.add(succ);
-						while (!queue.isEmpty()) {
-							Unit u = queue.remove();
-							List<Unit> alt_succs = cfg.getSuccsOf(u);
-							for (Unit alt_succ : alt_succs) {
-								queue.add(alt_succ);
-								if (!formsCycle(unit, alt_succ, cfg)) {
-									if (retriveEdge(unit, alt_succ, this) == null) {
-										MyEdge e = new MyEdge(unit, alt_succ);
-										edges.add(e);
-										backedges.add(e);
-
-										queue.clear();
-										break;
-									} else {
-										queue.clear();
-										break;
-									}
-								}
-							}
-						}
-
+						// queue.clear();
+						// break;
+						// } else {
+						// queue.clear();
+						// break;
+						// }
+						// }
+						// }
+						// }
+						// if (e == null)
+						// System.out.println("Error!!");
 					} else {
 						if (retriveEdge(unit, succ, this) == null) {
 							MyEdge e = new MyEdge(unit, succ);
@@ -420,10 +453,7 @@ public class PathProfiler extends BodyTransformer {
 			 * execution ends
 			 */
 			String signature = meth.getSubSignature();
-			System.out.println();
-			System.out.println("====================================");
-			System.out.println("!@#$%^Signature: " + signature);
-			System.out.println("------------------------------------");
+
 			boolean check = signature.equals("void main(java.lang.String[])");
 			if (check) {
 				Chain units = b.getUnits();
@@ -453,6 +483,7 @@ public class PathProfiler extends BodyTransformer {
 			 * This analyzes the methods given as command line argument. If this
 			 * is not given by the user, than analyze the whole class
 			 */
+
 			if ((methodsToPrint == null)
 					|| (meth.getDeclaringClass().getName() == methodsToPrint.get(meth.getName()))) {
 				Body body = ir.getBody((JimpleBody) b);
@@ -478,6 +509,12 @@ public class PathProfiler extends BodyTransformer {
 				if (cfg.getTails().size() > 1)
 					return;
 
+				// display signature of method being analyzed
+				System.out.println();
+				System.out.println("====================================");
+				System.out.println("Signature: " + meth.getSignature());
+				System.out.println("------------------------------------");
+
 				// add a dummy backedge from EXIT to ENTRY
 				spanningDummyBackedge = true;
 
@@ -501,10 +538,8 @@ public class PathProfiler extends BodyTransformer {
 					nodeDataHash.put(unit, node);
 				}
 
-				System.out.println("assigning values to edges. This may take a long time");
 				// assign values to edges in DAG (Algo in Figure 5 in paper)
 				assignVals(dag);
-				System.out.println("done");
 
 				// name says it all :)
 				buildSpanningTree(dag);
@@ -528,15 +563,16 @@ public class PathProfiler extends BodyTransformer {
 				 * placeInstrumentsToClass
 				 * 
 				 */
-				if (cfg.getTails().size() == 1)
-					placeInstruments(cfg, dag);
-				else
+				if (cfg.getTails().size() != 1)
 					failSafePlaceInstruments(cfg, dag);
+				else
+					placeInstruments(cfg, dag);
 
 				/*
 				 * This is responsible for instrumenting the class files
 				 */
-				// placeInstrumentsToClass(body, cfg);
+				if (placeInst)
+					placeInstrumentsToClass(body, cfg);
 
 				/*
 				 * Various display options. Use as required
@@ -808,7 +844,11 @@ public class PathProfiler extends BodyTransformer {
 			Map.Entry pair = (Map.Entry) it.next();
 			MyEdge edge = (MyEdge) pair.getKey();
 			String val = (String) pair.getValue();
-			System.out.println("Instrument:" + edge.src + "  -- >  " + edge.tgt + " *** " + val);
+			if (edge.isContainedIn(dag.artificial_list)) {
+				MyEdge backedge = dag.artificial.get(edge);
+				System.out.println("Instrument:" + backedge.src + "  -- >  " + backedge.tgt + " *** " + val);
+			} else
+				System.out.println("Instrument:" + edge.src + "  -- >  " + edge.tgt + " *** " + val);
 		}
 	}
 
@@ -1034,7 +1074,12 @@ public class PathProfiler extends BodyTransformer {
 		System.out.println("&&&&&&&&&&&&&&&&&&&&&&&&&");
 	}
 
-	public static void main(String[] args) {
+	public static void main(String[] args) throws FileNotFoundException {
+
+		if (printToFile) {
+			PrintStream printStream = new PrintStream(new FileOutputStream("output.txt"));
+			System.setOut(printStream);
+		}
 		PathProfiler profiler = new PathProfiler();
 		Transform printTransform = new Transform(phaseFullname, profiler);
 
