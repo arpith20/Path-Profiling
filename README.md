@@ -7,7 +7,7 @@
 
 ## Usage
 ### Possible Arguments for the PathProfiler
-* To instrument a particular class, use:**   
+* To instrument a particular class, use:   
 ```
 --cp [classPath]:[...]/workspace/PathProfiler/bin/ -pp [Class Name]#[Method Name]
 ```
