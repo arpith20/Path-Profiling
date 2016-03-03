@@ -68,7 +68,7 @@ public class PathProfiler extends BodyTransformer {
 	Unit ENTRY;
 	Unit EXIT;
 	boolean spanningDummyBackedge;
-	boolean regeneratePath = true;
+	boolean regeneratePath = false;
 
 	HashMap<Unit, NodeData> nodeDataHash = new HashMap<Unit, NodeData>();
 	List<MyEdge> spanningTreeEdges = new ArrayList<MyEdge>();
@@ -412,6 +412,12 @@ public class PathProfiler extends BodyTransformer {
 					}
 				}
 				System.out.println("Exiting internalTransform");
+				
+				nodeDataHash.clear();
+				spanningTreeEdges.clear();
+				chordEdges.clear();
+				inc.clear();
+				instrument.clear();
 			}
 		}
 	}
