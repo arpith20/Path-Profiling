@@ -4,16 +4,17 @@ class HelloWorld{
 	{
 		Scanner in = new Scanner(System.in);
 	    int x = in.nextInt();
-		if(x==0){
-			if(x==1){
-				x=x+3;
-			}
-		}
-		x=x+1;
+		simpleif(2);
+		simpleif(1);
+		simpleif(1);
+	}
+
+	public static void simpleif(int x){
 		if(x==2){
-			x=x+2;
+			System.out.println(x);
+		} else{
+			System.out.println(x);
 		}
-		x=x+3;
 	}
 
 	public void main2()
@@ -30,6 +31,31 @@ class HelloWorld{
 					x=x+2;
 				}
 			}
+		}
+		x=x+3;
+		if(x==3){
+			x=x+4;
+		}
+		x=x+5;
+		System.out.println(x);
+	}
+
+	public void main3()
+	{
+		Scanner in = new Scanner(System.in);
+	    int x = in.nextInt();
+	    int y = in.nextInt();
+		if(y==1) {
+			if(x==0){
+				x=x+1;
+			}
+			else {
+				if(x==1){
+					x=x+2;
+				}
+			}
+		}else{
+			x=x+10;
 		}
 		x=x+3;
 		if(x==3){

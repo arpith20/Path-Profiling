@@ -21,12 +21,14 @@ import soot.SootClass;
 import soot.SootMethod;
 import soot.Transform;
 import soot.Unit;
+import soot.jimple.IntConstant;
 import soot.jimple.InvokeExpr;
 import soot.jimple.Jimple;
 import soot.jimple.JimpleBody;
 import soot.jimple.ReturnStmt;
 import soot.jimple.ReturnVoidStmt;
 import soot.jimple.Stmt;
+import soot.jimple.StringConstant;
 import soot.options.Options;
 import soot.toolkits.graph.BriefUnitGraph;
 import soot.toolkits.graph.DirectedGraph;
@@ -44,6 +46,34 @@ import soot.util.dot.DotGraph;
  */
 public class PathProfiler extends BodyTransformer {
 
+	Unit ENTRY; // Entry node of the graph
+	Unit EXIT; // Exit node of the graph
+	boolean spanningDummyBackedge;
+	boolean regeneratePath = false;
+
+	// Stores metadata (NodeData) for each unit in CFG
+	HashMap<Unit, NodeData> nodeDataHash = new HashMap<Unit, NodeData>();
+
+	// List of all edges that form a spanning tree
+	List<MyEdge> spanningTreeEdges = new ArrayList<MyEdge>();
+
+	// List of all edges not in spanning tree
+	List<MyEdge> chordEdges = new ArrayList<MyEdge>();
+
+	// Stores increment values for each edge
+	HashMap<MyEdge, Integer> inc = new HashMap<MyEdge, Integer>();
+
+	// Stores instrumentation data in a form that is easily human readable
+	HashMap<MyEdge, String> instrument = new HashMap<MyEdge, String>();
+
+	// Stores instrumentation data in a form that is used by this implementation
+	HashMap<MyEdge, String> instrument_encoded = new HashMap<MyEdge, String>();
+
+	/*
+	 * Code from CFG Viewer. CFG ciewer generates a dot file in sootOutpot
+	 * directory which can be used to graphically view the control flow graph of
+	 * the given method
+	 */
 	private static final String packToJoin = "jtp";
 	private static final String phaseSubname = "printcfg";
 	private static final String phaseFullname = packToJoin + '.' + phaseSubname;
@@ -54,39 +84,32 @@ public class PathProfiler extends BodyTransformer {
 	private static final String defaultIR = "jimple";
 	private static final String multipageOptionName = "multipages";
 	private static final String briefLabelOptionName = "brief";
-
-	public boolean backedgeSupport = false;
-
 	private CFGGraphType graphtype;
 	private CFGIntermediateRep ir;
 	private CFGToDotGraph drawer;
-	private Map methodsToPrint; // If the user specifies particular
-	// methods to print, this is a map
-	// from method name to the class
-	// name declaring the method.
+	private Map methodsToPrint;
 
-	Unit ENTRY;
-	Unit EXIT;
-	boolean spanningDummyBackedge;
-	boolean regeneratePath = false;
-
-	HashMap<Unit, NodeData> nodeDataHash = new HashMap<Unit, NodeData>();
-	List<MyEdge> spanningTreeEdges = new ArrayList<MyEdge>();
-	List<MyEdge> chordEdges = new ArrayList<MyEdge>();
-	HashMap<MyEdge, Integer> inc = new HashMap<MyEdge, Integer>();
-	HashMap<MyEdge, String> instrument = new HashMap<MyEdge, String>();
-
+	// This is required for instrumentation. Look at MyCounter.java
 	SootClass counterClass = null;
 	SootMethod increaseCounter, reportCounter, initializeCounter, setCountCounter;
 
+	// This graph is responsible for converting the given CFG to DAG
 	public class DAG {
-		List<MyEdge> edges;
-		List<Unit> visited;
-		List<MyEdge> backedges;
-		List<MyEdge> artificial;
-		List<MyEdge> original;
-		List<MyEdge> singleexit;
+		List<MyEdge> edges; // Stores all edges in DAG
+		List<Unit> visited; // Stores visited units
+		List<MyEdge> backedges; // Stores only backedges
+		List<MyEdge> artificial;// Stores artificial edges (Edges that were
+								// artificially added)
+		List<MyEdge> original;// Stores original edges in CFG
 
+		/*
+		 * This stores edges that is responsible for converting the given CFG
+		 * with multiple exits to a DAG with a unique EXIT node
+		 */
+		List<MyEdge> singleexit;// This stores edges that is responsible for
+								// converting the
+
+		// Initialize above data members of DAG class
 		DAG() {
 			edges = new ArrayList<MyEdge>();
 			visited = new ArrayList<Unit>();
@@ -96,6 +119,9 @@ public class PathProfiler extends BodyTransformer {
 			singleexit = new ArrayList<MyEdge>();
 		}
 
+		/*
+		 * Returns the predecessor of a unit u
+		 */
 		public List<Unit> getPredsOf(Unit u) {
 			List<Unit> pred = new ArrayList<Unit>();
 			for (MyEdge e : edges) {
@@ -105,6 +131,9 @@ public class PathProfiler extends BodyTransformer {
 			return pred;
 		}
 
+		/*
+		 * Returns the successor of a unit u
+		 */
 		public List<Unit> getSuccsOf(Unit u) {
 			List<Unit> succ = new ArrayList<Unit>();
 			for (MyEdge e : edges) {
@@ -114,6 +143,10 @@ public class PathProfiler extends BodyTransformer {
 			return succ;
 		}
 
+		/*
+		 * Checks whether adding an edge from src to tgt forms a cycle True ->
+		 * Forms a cycle False -> Does not create a cycle
+		 */
 		public boolean formsCycle(Unit src, Unit tgt, BriefUnitGraph cfg) {
 			Queue<Unit> queue = new LinkedList();
 			queue.add(tgt);
@@ -129,6 +162,9 @@ public class PathProfiler extends BodyTransformer {
 			return false;
 		}
 
+		/*
+		 * Converts CFG to DAG
+		 */
 		public void buildDAG(BriefUnitGraph cfg) {
 
 			// ensure single exit
@@ -161,17 +197,6 @@ public class PathProfiler extends BodyTransformer {
 							}
 						}
 
-						if (backedgeSupport) {
-							backedges.add(new MyEdge(unit, succ));
-
-							MyEdge ent = new MyEdge(ENTRY, succ);
-							edges.add(ent);
-							artificial.add(ent);
-
-							MyEdge ext = new MyEdge(unit, EXIT);
-							edges.add(ext);
-							artificial.add(ext);
-						}
 					} else {
 						if (retriveEdge(unit, succ, this) == null) {
 							MyEdge e = new MyEdge(unit, succ);
@@ -185,15 +210,22 @@ public class PathProfiler extends BodyTransformer {
 
 	}
 
+	/*
+	 * A class to represent each edge
+	 */
 	public class MyEdge {
-		Unit src;
-		Unit tgt;
+		Unit src; // Source vertex of a directed edge
+		Unit tgt;// Sink/target of a directed edge
 
+		// Constructor to initialize the above data members
 		public MyEdge(Unit u1, Unit u2) {
 			src = u1;
 			tgt = u2;
 		}
 
+		/*
+		 * Returns true if the MyEdge object calling the function is equal to e2
+		 */
 		public boolean equals(MyEdge e2) {
 			if (this == null && e2 == null)
 				return true;
@@ -206,6 +238,10 @@ public class PathProfiler extends BodyTransformer {
 			return false;
 		}
 
+		/*
+		 * Returns true if the MyEdge object calling the function is present in
+		 * list l
+		 */
 		public boolean isContainedIn(List<MyEdge> l) {
 			for (MyEdge e : l) {
 				if (this.equals(e))
@@ -215,6 +251,10 @@ public class PathProfiler extends BodyTransformer {
 		}
 	}
 
+	/*
+	 * Every node has a metadata associated with it. I call this metadata,
+	 * NodeData
+	 */
 	public class NodeData {
 		public int nodeNumber; // a unique number assigned to wach node
 		public int numPaths; // NumPaths (v) as defined in paper; Figure 5
@@ -222,8 +262,12 @@ public class PathProfiler extends BodyTransformer {
 												// the outgoing edges of a node
 		// Val (e) as defined in paper; Figure 5
 
+		/*
+		 * Stores the spanninng tree node. Edge: this->succSpanningNode
+		 */
 		public List<Unit> succSpanningNode;
 
+		// Constructor to initialize the members
 		NodeData(int val) {
 			nodeNumber = val;
 			numPaths = 0;
@@ -231,6 +275,7 @@ public class PathProfiler extends BodyTransformer {
 			succSpanningNode = new ArrayList<Unit>();
 		}
 
+		// returns a unique number for the given node
 		public int getNodeNumber() {
 			return nodeNumber;
 		}
@@ -240,11 +285,17 @@ public class PathProfiler extends BodyTransformer {
 			edgeVal.put(unit, i);
 		}
 
+		// returns edgeval from a given node
 		public int getEdgeVal(Unit unit) {
 			return edgeVal.get(unit);
 		}
 	}
 
+	/*
+	 * !!!This function is NOT used!!! This function was initially used to test
+	 * the correctness of the results obtained. The CF that the following
+	 * finction generates is same as the one given in the Ball Larus paper
+	 */
 	public void fabricatedata(BriefUnitGraph cfg) {
 		Iterator<Unit> cfg_iterator = cfg.iterator();
 
@@ -314,22 +365,34 @@ public class PathProfiler extends BodyTransformer {
 	}
 
 	protected void internalTransform(Body b, String phaseName, Map options) {
+		// initialize various mapping required for CFGViewer
 		initialize(options);
 
 		synchronized (this) {
+			/*
+			 * Initialize the counter class. The counter class 'MyCounter' is
+			 * responsible for keeping track of path sums
+			 */
 			if (counterClass == null) {
 				counterClass = Scene.v().loadClassAndSupport("xyz.arpith.pathprofiler.MyCounter");
-				increaseCounter = counterClass.getMethod("void increase(java.lang.String,java.lang.Integer)");
-				initializeCounter = counterClass.getMethod("void initialize(java.lang.String,java.lang.Integer)");
-				setCountCounter = counterClass.getMethod("void setCount(java.lang.String,java.lang.Integer)");
+				increaseCounter = counterClass.getMethod("void increase(java.lang.String)");
+				initializeCounter = counterClass.getMethod("void initialize(java.lang.String)");
+				setCountCounter = counterClass.getMethod("void setCount(java.lang.String)");
 				reportCounter = counterClass.getMethod("void report()");
 			}
 
+			// method currently under observation
 			SootMethod meth = b.getMethod();
 
-			// Instrumentation to display results
+			/*
+			 * Instrumentation to display path sums and path counts when the
+			 * execution ends
+			 */
 			String signature = meth.getSubSignature();
+			System.out.println();
+			System.out.println("====================================");
 			System.out.println("!@#$%^Signature: " + signature);
+			System.out.println("------------------------------------");
 			boolean check = signature.equals("void main(java.lang.String[])");
 			if (check) {
 				Chain units = b.getUnits();
@@ -346,29 +409,42 @@ public class PathProfiler extends BodyTransformer {
 						units.insertBefore(reportStmt, stmt);
 					}
 				}
-				return;
 			}
+
+			/*
+			 * Do not instrument or analyze void <init>()
+			 */
 			check = signature.equals("void <init>()");
 			if (check)
 				return;
 
+			/*
+			 * This analyzes the methods given as command line argument. If this
+			 * is not given by the user, than analyze the whole class
+			 */
 			if ((methodsToPrint == null)
 					|| (meth.getDeclaringClass().getName() == methodsToPrint.get(meth.getName()))) {
 				Body body = ir.getBody((JimpleBody) b);
+
+				// Prints the IR of the method under observation
 				// System.out.println("This is the IR: \n" + body.toString());
 				BriefUnitGraph cfg = new BriefUnitGraph(b);
 
+				// initializations
 				ENTRY = cfg.getHeads().get(0);
 				EXIT = cfg.getTails().get(0);
+
+				// add a dummy backedge from EXIT to ENTRY
 				spanningDummyBackedge = true;
 
+				// build DAG
 				DAG dag = new DAG();
 				dag.buildDAG(cfg);
+
 				// for initial stage testing
 				// fabricatedata(cfg);
 
-				// iterate through all statements and initialize them correctly
-
+				// iterate through all nodes and initialize them correctly
 				int i = 0;
 				for (Unit unit : dag.visited) {
 					NodeData node = new NodeData(i++);
@@ -381,29 +457,60 @@ public class PathProfiler extends BodyTransformer {
 					nodeDataHash.put(unit, node);
 				}
 
-				// assign values to edges in DAG (Algo in Figure 5)
-				figure5(dag);
+				// assign values to edges in DAG (Algo in Figure 5 in paper)
+				assignVals(dag);
 
+				// name says it all :)
 				buildSpanningTree(dag);
+
+				// buile chord edges
 				buildChordEdges(dag);
 
+				// determine increments from each chord edges
+				// (Edges not in spanning tree)
 				determineIncrements(dag);
 
+				/*
+				 * The paper assumes the existence of only one EXIT vertex. The
+				 * algorithm proposed in the paper fails if there are multiple
+				 * EXIT nodes. Real world programs might contain multiple EXIT
+				 * nodes. In such case use a custom failsafe algorithm.
+				 * 
+				 * Also note that these functions only determine which edges
+				 * need to be instrumented with what. It does not place the
+				 * instruments in class. The task is done by
+				 * placeInstrumentsToClass
+				 * 
+				 */
 				if (cfg.getTails().size() == 1)
 					placeInstruments(cfg, dag);
 				else
 					failSafePlaceInstruments(cfg, dag);
 
-				placeInstrumentsToClass();
+				/*
+				 * This is responsible for instrumenting the class files
+				 */
+				placeInstrumentsToClass(body, cfg);
 
-				// display
-				displayChordEdges();
-				displaySpanningTree();
-				displayEdges(dag);
+				/*
+				 * Various display options. Use as required
+				 */
+				// displayChordEdges();
+				// displaySpanningTree();
+				// displayEdges(dag);
+				//
+				// displayNodeDataHash(dag);
 
-				displayNodeDataHash(dag);
-
+				/*
+				 * Saves the CFG to sootOutput file
+				 */
 				print_cfg(b);
+
+				/*
+				 * Given a path sum, which the user has to input,
+				 * regeneratePathFunc returns that path taken the the program
+				 * (in the function under observation).
+				 */
 				BufferedReader br = new BufferedReader(new InputStreamReader(System.in));
 				if (regeneratePath) {
 					System.out.print("Enter count");
@@ -417,15 +524,21 @@ public class PathProfiler extends BodyTransformer {
 				}
 				System.out.println("Exiting internalTransform");
 
+				// Clear data for use by other threads
 				nodeDataHash.clear();
 				spanningTreeEdges.clear();
 				chordEdges.clear();
 				inc.clear();
 				instrument.clear();
+				instrument_encoded.clear();
 			}
 		}
 	}
 
+	/*
+	 * Given a path sum, which the user has to input, regeneratePathFunc returns
+	 * that path taken the the program (in the function under observation).
+	 */
 	public void regeneratePathFunc(Integer pathval, DAG dag) {
 		Integer val = pathval;
 		Queue<Unit> queue = new LinkedList();
@@ -463,6 +576,9 @@ public class PathProfiler extends BodyTransformer {
 
 	}
 
+	/*
+	 * Displays the DAD edges to Console
+	 */
 	public void displayEdges(DAG dag) {
 		System.out.println("&&&&&&&&&&&&&DAG Edges&&&&&&&&&&&&&&&&&");
 
@@ -473,16 +589,68 @@ public class PathProfiler extends BodyTransformer {
 		System.out.println("&&&&&&&&&&&&&&&&&&&&&&&&&");
 	}
 
-	public void placeInstrumentsToClass() {
-		Iterator it = instrument.entrySet().iterator();
+	/*
+	 * This is responsible for instrumenting the class files
+	 */
+	public void placeInstrumentsToClass(Body body, BriefUnitGraph cfg) {
+
+		Iterator it = instrument_encoded.entrySet().iterator();
 		while (it.hasNext()) {
 			Map.Entry pair = (Map.Entry) it.next();
 			MyEdge edge = (MyEdge) pair.getKey();
 			String val = (String) pair.getValue();
-			System.out.println("Instrument2:" + edge.src + "************" + edge.tgt + "&&" + val);
+			val = val + "#" + body.getMethod().getSignature();
+			String[] tokens = val.split(":");
+			if (tokens[0].equals("ini")) {
+				InvokeExpr incExpr = Jimple.v().newStaticInvokeExpr(initializeCounter.makeRef(), StringConstant.v(val));
+				Stmt incStmt = Jimple.v().newInvokeStmt(incExpr);
+
+				if (edge.src.toString().subSequence(0, 4).equals("goto")) {
+					List<Unit> pred = cfg.getPredsOf(edge.src);
+					for (Unit u : pred) {
+						body.getUnits().insertAfter(incStmt, u);
+					}
+				} else
+					body.getUnits().insertAfter(incStmt, edge.src);
+
+			} else if (tokens[0].equals("inc")) {
+				InvokeExpr incExpr = Jimple.v().newStaticInvokeExpr(increaseCounter.makeRef(), StringConstant.v(val));
+				Stmt incStmt = Jimple.v().newInvokeStmt(incExpr);
+
+				if (edge.src.toString().subSequence(0, 4).equals("goto")) {
+					List<Unit> pred = cfg.getPredsOf(edge.src);
+					for (Unit u : pred) {
+						body.getUnits().insertAfter(incStmt, u);
+					}
+				} else
+					body.getUnits().insertAfter(incStmt, edge.src);
+
+			} else if (tokens[0].equals("count")) {
+				InvokeExpr incExpr = Jimple.v().newStaticInvokeExpr(setCountCounter.makeRef(), StringConstant.v(val));
+				Stmt incStmt = Jimple.v().newInvokeStmt(incExpr);
+				if (edge.src.toString().subSequence(0, 4).equals("goto")) {
+					List<Unit> pred = cfg.getPredsOf(edge.src);
+					for (Unit u : pred) {
+						body.getUnits().insertAfter(incStmt, u);
+					}
+				} else
+					body.getUnits().insertAfter(incStmt, edge.src);
+
+			}
 		}
 	}
 
+	/*
+	 * The paper assumes the existence of only one EXIT vertex. The algorithm
+	 * proposed in the paper fails if there are multiple EXIT nodes. Real world
+	 * programs might contain multiple EXIT nodes. In such case I use a custom
+	 * failsafe algorithm.
+	 * 
+	 * Also note that this function only determine which edges need to be
+	 * instrumented with what. It does not place the instruments in class. The
+	 * task is done by placeInstrumentsToClass
+	 * 
+	 */
 	public void failSafePlaceInstruments(BriefUnitGraph cfg, DAG dag) {
 		List<MyEdge> remaining = new ArrayList<MyEdge>();
 		remaining.addAll(dag.edges);
@@ -491,9 +659,11 @@ public class PathProfiler extends BodyTransformer {
 				MyEdge e = retriveEdge(src, tgt, dag);
 				Integer val = inc.get(e);
 				if (val != null) {
-					instrument.put(e, "chord[r+" + val + "]++");
+					instrument.put(e, "count[r+" + val + "]++");
+					instrument_encoded.put(e, "count:r:" + val);
 				} else {
-					instrument.put(e, "chord[r]++");
+					instrument.put(e, "count[r]++");
+					instrument_encoded.put(e, "count:r:" + 0);
 				}
 				remaining.remove(e);
 			}
@@ -502,21 +672,26 @@ public class PathProfiler extends BodyTransformer {
 			Integer val = inc.get(e);
 			if (val != null) {
 				instrument.put(e, "r=r+" + val);
+				instrument_encoded.put(e, "inc:" + val);
 			}
 		}
 
-		for (Unit succ : cfg.getSuccsOf(ENTRY)) {
-			MyEdge e = retriveEdge(ENTRY, succ, dag);
-			Integer val = inc.get(e);
-			if (val != null) {
-				instrument.put(e, "r=" + val);
-			} else {
-				instrument.put(e, "r=0");
-			}
-
+		Iterator it = instrument_encoded.entrySet().iterator();
+		while (it.hasNext()) {
+			Map.Entry pair = (Map.Entry) it.next();
+			MyEdge edge = (MyEdge) pair.getKey();
+			String val = (String) pair.getValue();
+			System.out.println("Instrument:" + edge.src + "  -- >  " + edge.tgt + " *** " + val);
 		}
 	}
 
+	/*
+	 * Determined what instrumentation needs to be placed.
+	 * 
+	 * Also note that this function only determine which edges need to be
+	 * instrumented with what. It does not place the instruments in class. The
+	 * task is done by placeInstrumentsToClass
+	 */
 	public void placeInstruments(BriefUnitGraph cfg, DAG dag) {
 
 		// register initialization code
@@ -534,11 +709,13 @@ public class PathProfiler extends BodyTransformer {
 				if (e.isContainedIn(chordEdges)) {
 					String value = "r=" + inc.get(e);
 					instrument.put(e, value);
+					instrument_encoded.put(e, "ini:" + inc.get(e));
 				} // else if (w == ENTRY || cfg.getPredsOf(w).size() == 1) {
 				else if (cfg.getPredsOf(w).size() == 1) {
 					WS.add(w);
 				} else {
 					instrument.put(e, "r=0");
+					instrument_encoded.put(e, "ini:" + 0);
 				}
 			}
 		}
@@ -557,14 +734,17 @@ public class PathProfiler extends BodyTransformer {
 					Integer inc_e = inc.get(e);
 					if (instrument.get(e) != null && instrument.get(e).equals("r=" + inc_e)) {
 						instrument.put(e, "count[" + inc_e + "]++");
+						instrument_encoded.put(e, "count:x:" + inc.get(e));
 					} else {
 						instrument.put(e, "count[r+" + inc_e + "]++");
+						instrument_encoded.put(e, "count:r:" + inc.get(e));
 					}
 				} // else if (v == EXIT || cfg.getSuccsOf(v).size() == 1) {
 				else if (cfg.getSuccsOf(v).size() == 1) {
 					WS.add(v);
 				} else {
 					instrument.put(e, "count[r]++");
+					instrument_encoded.put(e, "count:r:0");
 				}
 			}
 		}
@@ -573,10 +753,23 @@ public class PathProfiler extends BodyTransformer {
 		for (MyEdge c : chordEdges) {
 			if (instrument.get(c) == null) {
 				instrument.put(c, "r=r+" + inc.get(c));
+				instrument_encoded.put(c, "inc:" + inc.get(c));
 			}
+		}
+
+		Iterator it = instrument_encoded.entrySet().iterator();
+		while (it.hasNext()) {
+			Map.Entry pair = (Map.Entry) it.next();
+			MyEdge edge = (MyEdge) pair.getKey();
+			String val = (String) pair.getValue();
+			System.out.println("Instrument:" + edge.src + "  -- >  " + edge.tgt + " *** " + val);
 		}
 	}
 
+	/*
+	 * Given a source and target nodes, it returns a unique edge with this nodes
+	 * as it's source and target
+	 */
 	public MyEdge retriveEdge(Unit src, Unit tgt, DAG dag) {
 		for (MyEdge e : dag.edges) {
 			if (e.src == src && e.tgt == tgt)
@@ -585,6 +778,9 @@ public class PathProfiler extends BodyTransformer {
 		return null;
 	}
 
+	/*
+	 * Determines edges that are not in spanning tree
+	 */
 	public void buildChordEdges(DAG cfg) {
 
 		for (Unit unit : cfg.visited) {
@@ -599,15 +795,11 @@ public class PathProfiler extends BodyTransformer {
 				}
 			}
 		}
-
-		// if (!spanningDummyBackedge) {
-		// // add dummy backedge
-		// NodeData nd = nodeDataHash.get(EXIT);
-		// nd.edgeVal.put(ENTRY, 0);
-		// chordEdges.add(new MyEdge(EXIT, ENTRY));
-		// }
 	}
 
+	/*
+	 * Determines increments from each chord edge
+	 */
 	public void determineIncrements(DAG cfg) {
 		// initialize int inc variable
 		for (MyEdge e : chordEdges) {
@@ -619,7 +811,8 @@ public class PathProfiler extends BodyTransformer {
 		for (MyEdge e : chordEdges) {
 			Integer i = inc.get(e) + Events(e);
 			inc.put(e, i);
-			System.out.println("Increment: " + e.src + "&&&&" + e.tgt + "&&&&&&" + i);
+			// System.out.println("Increment: " + e.src + "&&&&" + e.tgt +
+			// "&&&&&&" + i);
 		}
 
 	}
@@ -659,6 +852,9 @@ public class PathProfiler extends BodyTransformer {
 		}
 	}
 
+	/*
+	 * Builds Spanning tree
+	 */
 	public void buildSpanningTree(DAG cfg) {
 		DisjointSets disjointSet = new DisjointSets();
 
@@ -717,7 +913,10 @@ public class PathProfiler extends BodyTransformer {
 		}
 	}
 
-	public void figure5(DAG cfg) {
+	/*
+	 * assign values to edges in DAG (Algo in Figure 5)
+	 */
+	public void assignVals(DAG cfg) {
 		Queue<Unit> toProcess = new LinkedList<Unit>();
 		// initialize queue
 		toProcess.add(EXIT);
@@ -740,6 +939,9 @@ public class PathProfiler extends BodyTransformer {
 		}
 	}
 
+	/*
+	 * Display node metadata
+	 */
 	public void displayNodeDataHash(DAG cfg) {
 		System.out.println("**************Nodedatahash****************");
 		Iterator it = nodeDataHash.entrySet().iterator();
@@ -760,6 +962,9 @@ public class PathProfiler extends BodyTransformer {
 		}
 	}
 
+	/*
+	 * display all DAG edges in graph
+	 */
 	public void displayChordEdges() {
 		System.out.println("&&&&&&&&&&&&&Chord Edges&&&&&&&&&&&&&&&&&");
 
@@ -770,6 +975,9 @@ public class PathProfiler extends BodyTransformer {
 		System.out.println("&&&&&&&&&&&&&&&&&&&&&&&&&");
 	}
 
+	/*
+	 * Display Spanning tree
+	 */
 	public void displaySpanningTree() {
 		System.out.println("&&&&&&&&&&&&&Spanning Tree&&&&&&&&&&&&&&&&&");
 
@@ -781,20 +989,31 @@ public class PathProfiler extends BodyTransformer {
 	}
 
 	public static void main(String[] args) {
-		PathProfiler viewer = new PathProfiler();
-		Transform printTransform = new Transform(phaseFullname, viewer);
+		PathProfiler profiler = new PathProfiler();
+		Transform printTransform = new Transform(phaseFullname, profiler);
+
+		// for CFGViewer
 		printTransform.setDeclaredOptions("enabled " + altClassPathOptionName + ' ' + graphTypeOptionName + ' '
 				+ irOptionName + ' ' + multipageOptionName + ' ' + briefLabelOptionName + ' ');
 		printTransform.setDefaultOptions("enabled " + altClassPathOptionName + ": " + graphTypeOptionName + ':'
 				+ defaultGraph + ' ' + irOptionName + ':' + defaultIR + ' ' + multipageOptionName + ":false " + ' '
 				+ briefLabelOptionName + ":false ");
 		PackManager.v().getPack("jtp").add(printTransform);
-		args = viewer.parse_options(args);
+
+		// Get arguments from user
+		args = profiler.parse_options(args);
+
+		// A random print statement
 		System.out.println("in main");
 
+		// if the user does not enter any arguments, print the usage
 		if (args.length == 0) {
 			usage();
 		} else {
+
+			/*
+			 * Required for functioning of MyCounter.java
+			 */
 			Scene.v().addBasicClass("xyz.arpith.pathprofiler.MyCounter");
 			Scene.v().addBasicClass("java.util.HashMap");
 			Scene.v().addBasicClass("java.util.HashMap$Node");
@@ -805,98 +1024,45 @@ public class PathProfiler extends BodyTransformer {
 			Scene.v().addBasicClass("java.lang.invoke.SerializedLambda");
 			Scene.v().addBasicClass("java.util.function.Predicate");
 			Scene.v().addBasicClass("java.util.stream.Stream");
+
+			// Start analysis
 			soot.Main.main(args);
 		}
 	}
 
 	private static void usage() {
-		G.v().out.println("Usage:\n"
-				+ "   java soot.util.CFGViewer [soot options] [CFGViewer options] [class[:method]]...\n\n"
-				+ "   CFGViewer options:\n" + "      (When specifying the value for an '=' option, you only\n"
-				+ "       need to type enough characters to specify the choice\n"
-				+ "       unambiguously, and case is ignored.)\n" + "\n" + "       --alt-classpath PATH :\n"
-				+ "                specifies the classpath from which to load classes\n"
-				+ "                that implement graph types whose names begin with 'Alt'.\n" + "       --graph={"
-				+ CFGGraphType.help(0, 70, "                ".length()) + "} :\n"
-				+ "                show the specified type of graph.\n" + "                Defaults to " + defaultGraph
-				+ ".\n" + "       --ir={" + CFGIntermediateRep.help(0, 70, "                ".length()) + "} :\n"
-				+ "                create the CFG from the specified intermediate\n"
-				+ "                representation. Defaults to " + defaultIR + ".\n" + "       --brief :\n"
-				+ "                label nodes with the unit or block index,\n"
-				+ "                instead of the text of their statements.\n" + "       --multipages :\n"
-				+ "                produce dot file output for multiple 8.5x11\" pages.\n"
-				+ "                By default, a single page is produced.\n" + "       --help :\n"
-				+ "                print this message.\n" + "\n"
-				+ "   Particularly relevant soot options (see \"soot --help\" for details):\n"
-				+ "       --soot-class-path PATH\n" + "       --show-exception-dests\n"
-				+ "       --throw-analysis {pedantic|unit}\n" + "       --omit-excepting-unit-edges\n"
-				+ "       --trim-cfgs\n");
+		G.v().out.println("Input arguments. ToDo: write usage here");
 	}
 
-	/**
-	 * Parse the command line arguments specific to CFGViewer, and convert them
-	 * into phase options for jtp.printcfg.
-	 *
-	 * @return an array of arguments to pass on to Soot.Main.main().
+	/*
+	 * Parse the command line arguments
 	 */
 	private String[] parse_options(String[] args) {
 		List sootArgs = new ArrayList(args.length);
 
 		for (int i = 0, n = args.length; i < n; i++) {
-			if (args[i].equals("--alt-classpath") || args[i].equals("--alt-class-path")) {
-				sootArgs.add("-p");
-				sootArgs.add(phaseFullname);
-				sootArgs.add(altClassPathOptionName + ':' + args[++i]);
-			} else if (args[i].startsWith("--graph=")) {
-				sootArgs.add("-p");
-				sootArgs.add(phaseFullname);
-				sootArgs.add(graphTypeOptionName + ':' + args[i].substring("--graph=".length()));
-			} else if (args[i].startsWith("--ir=")) {
-				sootArgs.add("-p");
-				sootArgs.add(phaseFullname);
-				sootArgs.add(irOptionName + ':' + args[i].substring("--ir=".length()));
-			} else if (args[i].equals("--brief")) {
-				sootArgs.add("-p");
-				sootArgs.add(phaseFullname);
-				sootArgs.add(briefLabelOptionName + ":true");
-			} else if (args[i].equals("--multipages")) {
-				sootArgs.add("-p");
-				sootArgs.add(phaseFullname);
-				sootArgs.add(multipageOptionName + ":true");
-			} else if (args[i].equals("--help")) {
-				return new String[0]; // This is a cheesy method to inveigle
-				// our caller into printing the help
-				// and exiting.
-			} else if (args[i].equals("--soot-class-path") || args[i].equals("-soot-class-path")
-					|| args[i].equals("--soot-classpath") || args[i].equals("-soot-classpath")) {
-				// Pass classpaths without treating ":" as a method specifier.
+
+			int smpos = args[i].indexOf('#');
+			if (smpos == -1) {
 				sootArgs.add(args[i]);
-				sootArgs.add(args[++i]);
-			} else if (args[i].equals("-p") || args[i].equals("--phase-option") || args[i].equals("-phase-option")) {
-				// Pass phase options without treating ":" as a method
-				// specifier.
-				sootArgs.add(args[i]);
-				sootArgs.add(args[++i]);
-				sootArgs.add(args[++i]);
 			} else {
-				int smpos = args[i].indexOf('#');
-				if (smpos == -1) {
-					sootArgs.add(args[i]);
-				} else {
-					String clsname = args[i].substring(0, smpos);
-					sootArgs.add(clsname);
-					String methname = args[i].substring(smpos + 1);
-					if (methodsToPrint == null) {
-						methodsToPrint = new HashMap();
-					}
-					methodsToPrint.put(methname, clsname);
+				String clsname = args[i].substring(0, smpos);
+				sootArgs.add(clsname);
+				String methname = args[i].substring(smpos + 1);
+				if (methodsToPrint == null) {
+					methodsToPrint = new HashMap();
 				}
+				methodsToPrint.put(methname, clsname);
 			}
+
 		}
 		String[] sootArgsArray = new String[sootArgs.size()];
 		return (String[]) sootArgs.toArray(sootArgsArray);
 	}
 
+	/*
+	 * All initializations pertaining to CFG Viewer is done here
+	 */
 	private void initialize(Map options) {
 		if (drawer == null) {
 			drawer = new CFGToDotGraph();
@@ -920,6 +1086,9 @@ public class PathProfiler extends BodyTransformer {
 		}
 	}
 
+	/*
+	 * Prints the CFG to do file. This file is placed in sootOutput
+	 */
 	protected void print_cfg(Body body) {
 		DirectedGraph graph = graphtype.buildGraph(body);
 		DotGraph canvas = graphtype.drawGraph(drawer, graph, body);

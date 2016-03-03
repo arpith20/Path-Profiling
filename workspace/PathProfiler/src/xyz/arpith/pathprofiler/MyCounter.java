@@ -1,29 +1,55 @@
 package xyz.arpith.pathprofiler;
 
 import java.util.HashMap;
+import java.util.Iterator;
+import java.util.Map;
 
 public class MyCounter {
 	private static HashMap<String, HashMap<Integer, Integer>> count;
 	private static HashMap<String, Integer> r;
 
-	public static synchronized void increase(String method, Integer val) {
+	public static synchronized void increase(String input) {
+		String method = input.split("#")[1];
+		String data = input.split("#")[0];
+
+		Integer val = Integer.parseInt(data.split(":")[1]);
+
 		Integer v = r.get(method);
+		if (v == null)
+			v = 0;
 		v = v + val;
 		r.put(method, v);
+
 	}
 
-	public static synchronized void initialize(String method, Integer val) {
+	public static synchronized void initialize(String input) {
+		String method = input.split("#")[1];
+		String data = input.split("#")[0];
+
+		Integer val = Integer.parseInt(data.split(":")[1]);
+
 		if (r == null) {
 			r = new HashMap<String, Integer>();
 		}
+
 		r.put(method, val);
 	}
 
-	public static synchronized void setCount(String method, Integer add_val) {
+	public static synchronized void setCount(String input) {
+		String method = input.split("#")[1];
+		String data = input.split("#")[0];
+
+		Integer add_val = Integer.parseInt(data.split(":")[2]);
+
 		if (count == null) {
 			count = new HashMap<String, HashMap<Integer, Integer>>();
 		}
-		Integer val = r.get(method);
+
+		Integer val;
+		if (data.split(":")[1].equals("r"))
+			val = r.get(method);
+		else
+			val = 0;
 		val = val + add_val;
 
 		HashMap<Integer, Integer> count_vals = count.get(method);
@@ -43,12 +69,14 @@ public class MyCounter {
 
 	public static synchronized void report() {
 		System.out.println("Done Analysis");
-		// Iterator it = count.entrySet().iterator();
-		// while (it.hasNext()) {
-		// Map.Entry pair = (Map.Entry) it.next();
-		// Integer i = (Integer) pair.getKey();
-		// Integer c = (Integer) pair.getValue();
-		// System.out.println("Path Sum:" + i + " --> " + c);
-		// }
+		for (Map.Entry<String, HashMap<Integer, Integer>> entry : count.entrySet()) {
+			String method = entry.getKey();
+			System.out.println("****" + method);
+			for (Map.Entry<Integer, Integer> valEntry : entry.getValue().entrySet()) {
+				Integer name = valEntry.getKey();
+				Integer student = valEntry.getValue();
+				System.out.println("    PathSum:" + name + " --> Count: " + student);
+			}
+		}
 	}
 }
