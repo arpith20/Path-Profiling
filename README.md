@@ -7,7 +7,7 @@
 
 ## Usage
 ### Possible Arguments for the PathProfiler
-* To instrument a particular class, use:   
+* To instrument a particular class, use:**   
 ```
 --cp [classPath]:[...]/workspace/PathProfiler/bin/ -pp [Class Name]#[Method Name]
 ```
@@ -17,13 +17,12 @@ Example:
 ```
 The above arguments ensures that only a method named simpleif() is instrumented. It also specifies that this method is present in HelloWorld class.
 
-*
-To instrument all members in a class, use:
+* To instrument all members in a class, use:
 ```
 --cp [classPath]:[...]/workspace/PathProfiler/bin/ -pp [Class Name]
 ```
-*
-To instrument all classes in a directory, use:
+
+* To instrument all classes in a directory, use:
 ```
 --cp [classPath]:[...]/workspace/PathProfiler/bin/ -pp --process-dir [DIR]
 ```
