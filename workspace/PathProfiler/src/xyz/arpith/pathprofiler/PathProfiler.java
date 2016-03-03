@@ -77,7 +77,7 @@ public class PathProfiler extends BodyTransformer {
 	HashMap<MyEdge, String> instrument = new HashMap<MyEdge, String>();
 
 	SootClass counterClass = null;
-	SootMethod increaseCounter, reportCounter, initializeCounter;
+	SootMethod increaseCounter, reportCounter, initializeCounter, setCountCounter;
 
 	public class DAG {
 		List<MyEdge> edges;
@@ -314,14 +314,14 @@ public class PathProfiler extends BodyTransformer {
 	}
 
 	protected void internalTransform(Body b, String phaseName, Map options) {
-		System.out.println(Scene.v().getSootClassPath());
 		initialize(options);
 
 		synchronized (this) {
 			if (counterClass == null) {
 				counterClass = Scene.v().loadClassAndSupport("xyz.arpith.pathprofiler.MyCounter");
-				increaseCounter = counterClass.getMethod("void increase(java.lang.Integer,java.lang.Integer)");
-				initializeCounter = counterClass.getMethod("void initialize(java.lang.Integer,java.lang.Integer)");
+				increaseCounter = counterClass.getMethod("void increase(java.lang.String,java.lang.Integer)");
+				initializeCounter = counterClass.getMethod("void initialize(java.lang.String,java.lang.Integer)");
+				setCountCounter = counterClass.getMethod("void setCount(java.lang.String,java.lang.Integer)");
 				reportCounter = counterClass.getMethod("void report()");
 			}
 
@@ -329,9 +329,9 @@ public class PathProfiler extends BodyTransformer {
 
 			// Instrumentation to display results
 			String signature = meth.getSubSignature();
-			System.out.println("Signature: " + signature);
-			boolean isMain = signature.equals("void main(java.lang.String[])");
-			if (isMain) {
+			System.out.println("!@#$%^Signature: " + signature);
+			boolean check = signature.equals("void main(java.lang.String[])");
+			if (check) {
 				Chain units = b.getUnits();
 				Iterator stmtIt = units.snapshotIterator();
 
@@ -346,7 +346,11 @@ public class PathProfiler extends BodyTransformer {
 						units.insertBefore(reportStmt, stmt);
 					}
 				}
+				return;
 			}
+			check = signature.equals("void <init>()");
+			if (check)
+				return;
 
 			if ((methodsToPrint == null)
 					|| (meth.getDeclaringClass().getName() == methodsToPrint.get(meth.getName()))) {
@@ -412,7 +416,7 @@ public class PathProfiler extends BodyTransformer {
 					}
 				}
 				System.out.println("Exiting internalTransform");
-				
+
 				nodeDataHash.clear();
 				spanningTreeEdges.clear();
 				chordEdges.clear();
