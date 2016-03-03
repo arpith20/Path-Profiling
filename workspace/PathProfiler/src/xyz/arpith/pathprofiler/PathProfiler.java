@@ -185,14 +185,45 @@ public class PathProfiler extends BodyTransformer {
 						System.out.println("!@#$$^$&^#%^$@%@$%#$%$^&%&%*^$%W@$#@$#@$%^#");
 						System.out.println(unit + " " + succ);
 
+						/*
+						 * To use method given in paper, uncomment the following
+						 * lines
+						 */
+						// MyEdge back = new MyEdge(unit, succ);
+						// backedges.add(back);
+						// instrument.put(back, "count[r]++; r=0;");
+						// instrument_encoded.put(back, "count:r:0");
+						// instrument_encoded.put(back, "ini:0");
+						//
+						// MyEdge ent = new MyEdge(ENTRY, succ);
+						// edges.add(ent);
+						// artificial.add(ent);
+						//
+						// MyEdge ext = new MyEdge(unit, EXIT);
+						// edges.add(ext);
+						// artificial.add(ext);
+
 						// handle backedge
-						List<Unit> alt_succs = cfg.getSuccsOf(succ);
-						for (Unit alt_succ : alt_succs) {
-							if (!formsCycle(unit, alt_succ, cfg)) {
-								if (retriveEdge(unit, alt_succ, this) == null) {
-									MyEdge e = new MyEdge(unit, alt_succ);
-									edges.add(e);
-									backedges.add(e);
+						Queue<Unit> queue = new LinkedList();
+
+						queue.add(succ);
+						while (!queue.isEmpty()) {
+							Unit u = queue.remove();
+							List<Unit> alt_succs = cfg.getSuccsOf(u);
+							for (Unit alt_succ : alt_succs) {
+								queue.add(alt_succ);
+								if (!formsCycle(unit, alt_succ, cfg)) {
+									if (retriveEdge(unit, alt_succ, this) == null) {
+										MyEdge e = new MyEdge(unit, alt_succ);
+										edges.add(e);
+										backedges.add(e);
+
+										queue.clear();
+										break;
+									} else {
+										queue.clear();
+										break;
+									}
 								}
 							}
 						}
@@ -414,7 +445,7 @@ public class PathProfiler extends BodyTransformer {
 			/*
 			 * Do not instrument or analyze void <init>()
 			 */
-			check = signature.equals("void <init>()");
+			check = signature.contains("void <init");
 			if (check)
 				return;
 
@@ -433,6 +464,19 @@ public class PathProfiler extends BodyTransformer {
 				// initializations
 				ENTRY = cfg.getHeads().get(0);
 				EXIT = cfg.getTails().get(0);
+
+				/*
+				 * The following ignores methods with multiple end points as it
+				 * is not considered in the paper.
+				 * 
+				 * However, my code supports multiple EXITS with the addition of
+				 * failSafePlaceInstruments function.
+				 * 
+				 * Just comment the following code if you wish to analyze such
+				 * methods.
+				 */
+				if (cfg.getTails().size() > 1)
+					return;
 
 				// add a dummy backedge from EXIT to ENTRY
 				spanningDummyBackedge = true;
@@ -457,8 +501,10 @@ public class PathProfiler extends BodyTransformer {
 					nodeDataHash.put(unit, node);
 				}
 
+				System.out.println("assigning values to edges. This may take a long time");
 				// assign values to edges in DAG (Algo in Figure 5 in paper)
 				assignVals(dag);
+				System.out.println("done");
 
 				// name says it all :)
 				buildSpanningTree(dag);
@@ -490,7 +536,7 @@ public class PathProfiler extends BodyTransformer {
 				/*
 				 * This is responsible for instrumenting the class files
 				 */
-				placeInstrumentsToClass(body, cfg);
+				// placeInstrumentsToClass(body, cfg);
 
 				/*
 				 * Various display options. Use as required
@@ -676,7 +722,7 @@ public class PathProfiler extends BodyTransformer {
 			}
 		}
 
-		Iterator it = instrument_encoded.entrySet().iterator();
+		Iterator it = instrument.entrySet().iterator();
 		while (it.hasNext()) {
 			Map.Entry pair = (Map.Entry) it.next();
 			MyEdge edge = (MyEdge) pair.getKey();
@@ -757,7 +803,7 @@ public class PathProfiler extends BodyTransformer {
 			}
 		}
 
-		Iterator it = instrument_encoded.entrySet().iterator();
+		Iterator it = instrument.entrySet().iterator();
 		while (it.hasNext()) {
 			Map.Entry pair = (Map.Entry) it.next();
 			MyEdge edge = (MyEdge) pair.getKey();
@@ -1024,6 +1070,12 @@ public class PathProfiler extends BodyTransformer {
 			Scene.v().addBasicClass("java.lang.invoke.SerializedLambda");
 			Scene.v().addBasicClass("java.util.function.Predicate");
 			Scene.v().addBasicClass("java.util.stream.Stream");
+			Scene.v().addBasicClass("java.util.Iterator");
+			Scene.v().addBasicClass("java.util.function.Consumer");
+			Scene.v().addBasicClass("java.io.OutputStreamWriter");
+			Scene.v().addBasicClass("java.io.BufferedWriter");
+			Scene.v().addBasicClass("java.io.FileNotFoundException");
+			Scene.v().addBasicClass("java.util.Formatter");
 
 			// Start analysis
 			soot.Main.main(args);

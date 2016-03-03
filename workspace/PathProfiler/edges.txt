@@ -1,0 +1,41 @@
+in main
+Soot started on Thu Mar 03 18:22:43 IST 2016
+Transforming HelloWorld... 
+
+====================================
+!@#$%^Signature: void <init>()
+------------------------------------
+
+====================================
+!@#$%^Signature: void main(java.lang.String[])
+------------------------------------
+
+====================================
+!@#$%^Signature: void simpleif(int)
+------------------------------------
+
+====================================
+!@#$%^Signature: void main2()
+------------------------------------
+
+====================================
+!@#$%^Signature: void main3()
+------------------------------------
+
+====================================
+!@#$%^Signature: int multi_ret(int)
+------------------------------------
+
+====================================
+!@#$%^Signature: void one_while(int)
+------------------------------------
+!@#$$^$&^#%^$@%@$%#$%$^&%&%*^$%W@$#@$#@$%^#
+goto [?= (branch)] if i0 != 5 goto $r1 = <java.lang.System: java.io.PrintStream out>
+Instrument:virtualinvoke $r1.<java.io.PrintStream: void println(int)>(i0)  -- >  return *** count:r:1
+Instrument:i0 := @parameter0: int  -- >  if i0 != 5 goto $r1 = <java.lang.System: java.io.PrintStream out> *** ini:0
+Instrument:goto [?= (branch)]  -- >  $r1 = <java.lang.System: java.io.PrintStream out> *** inc:-1
+Generate dot file in sootOutput/void one_while(int).dot
+Exiting internalTransform
+Writing to sootOutput/HelloWorld.class
+Soot finished on Thu Mar 03 18:22:52 IST 2016
+Soot has run for 0 min. 9 sec.
