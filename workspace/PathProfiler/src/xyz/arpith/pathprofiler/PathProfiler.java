@@ -55,6 +55,9 @@ import soot.util.dot.DotGraph;
  *
  * 
  */
+
+//TODO: Handle backedge's instrumentation
+//TODO: handle system.exit(0) cases
 public class PathProfiler extends BodyTransformer {
 
 	Unit ENTRY; // Entry node of the graph
@@ -686,20 +689,21 @@ public class PathProfiler extends BodyTransformer {
 	public void placeInstrumentsToClass(Body body, BriefUnitGraph cfg) {
 
 		Iterator it = instrument_encoded.entrySet().iterator();
-		next: while (it.hasNext()) {
-			Map.Entry pair = (Map.Entry) it.next(); // pair: (Edge,
-													// Instrumentation(encoded
-													// format))
-			MyEdge edge = (MyEdge) pair.getKey(); // extract edge
-			String val = (String) pair.getValue(); // extract instrumentation
-			val = val + "#" + body.getMethod().getSignature(); // add method
-																// information
-																// to the
-																// instrumentation
+		while (it.hasNext()) {
+			// pair: (Edge, Instrumentation(encoded format))
+			Map.Entry pair = (Map.Entry) it.next();
+
+			// extract edge
+			MyEdge edge = (MyEdge) pair.getKey();
+
+			// extract instrumentation
+			String val = (String) pair.getValue();
+
+			// add method information to the instrumentation
+			// This information is then used by the counter
+			val = val + "#" + body.getMethod().getSignature();
 
 			String[] tokens = val.split(":");
-
-			System.out.println("Instrument_toClass:" + edge.src + "  -- >  " + edge.tgt + " *** " + val);
 
 			if (tokens[0].equals("ini")) {
 				List<Unit> succ_toProcess = new ArrayList<Unit>();
@@ -707,7 +711,7 @@ public class PathProfiler extends BodyTransformer {
 
 				boolean set = false;
 
-				System.out.println("******" + edge.src + "-->" + edge.tgt);
+				System.out.println("Instrument_toClass:" + edge.src + "  -- >  " + edge.tgt + " *** " + val);
 
 				List<UnitBox> u_boxes = edge.src.getUnitBoxes();
 				for (UnitBox u_box : u_boxes) {
@@ -736,7 +740,7 @@ public class PathProfiler extends BodyTransformer {
 
 						succ_toProcess.clear();
 					} else {
-						throw new NullPointerException("Something is wrong with the logic of placing instrumentation");
+						throw new Error("Something is wrong with the logic of placing instrumentation");
 					}
 				}
 				succ_toProcess.clear();
@@ -746,7 +750,7 @@ public class PathProfiler extends BodyTransformer {
 
 				boolean set = false;
 
-				System.out.println("******" + edge.src + "-->" + edge.tgt);
+				System.out.println("Instrument_toClass:" + edge.src + "  -- >  " + edge.tgt + " *** " + val);
 
 				List<UnitBox> u_boxes = edge.src.getUnitBoxes();
 				for (UnitBox u_box : u_boxes) {
@@ -777,7 +781,7 @@ public class PathProfiler extends BodyTransformer {
 
 						succ_toProcess.clear();
 					} else {
-						throw new NullPointerException("Something is wrong with the logic of placing instrumentation");
+						throw new Error("Something is wrong with the logic of placing instrumentation");
 					}
 				}
 				succ_toProcess.clear();
@@ -787,7 +791,7 @@ public class PathProfiler extends BodyTransformer {
 
 				boolean set = false;
 
-				System.out.println("******" + edge.src + "-->" + edge.tgt);
+				System.out.println("Instrument_toClass:" + edge.src + "  -- >  " + edge.tgt + " *** " + val);
 
 				List<UnitBox> u_boxes = edge.src.getUnitBoxes();
 				for (UnitBox u_box : u_boxes) {
@@ -818,7 +822,7 @@ public class PathProfiler extends BodyTransformer {
 
 						succ_toProcess.clear();
 					} else {
-						throw new NullPointerException("Something is wrong with the logic of placing instrumentation");
+						throw new Error("Something is wrong with the logic of placing instrumentation");
 					}
 				}
 				succ_toProcess.clear();
@@ -830,7 +834,7 @@ public class PathProfiler extends BodyTransformer {
 	 * The paper assumes the existence of only one EXIT vertex. The algorithm
 	 * proposed in the paper fails if there are multiple EXIT nodes. Real world
 	 * programs might contain multiple EXIT nodes. In such case I use a custom
-	 * failsafe algorithm.
+	 * failsafe algorithm to place instruments
 	 * 
 	 * Also note that this function only determine which edges need to be
 	 * instrumented with what. It does not place the instruments in class. The

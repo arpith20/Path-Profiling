@@ -88,6 +88,7 @@ public class MyCounter {
 		}
 	}
 
+	// prints the output at the end of execution
 	public static synchronized void report() {
 		System.out.println("Done Analysis");
 		for (Map.Entry<String, HashMap<Integer, Integer>> entry : count.entrySet()) {
