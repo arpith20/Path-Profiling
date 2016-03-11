@@ -9,6 +9,8 @@ import java.util.Set;
 
 import soot.Unit;
 
+
+//This is used to detect cycles when constructing a spanning tree
 public class DisjointSets {
 	private List<Map<Unit, Set<Unit>>> disjointSet;
 

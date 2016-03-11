@@ -48,8 +48,9 @@ public class MyCounter {
 	/*
 	 * Increment value of count.
 	 * 
-	 * All data is present in input, which is formatted as 'count:[x or
-	 * r]:val#method'
+	 * All data is present in input, which is formatted as:
+	 * 
+	 * 'count:[x or r]:val#method'
 	 * 
 	 * x-> count[val]++
 	 * 

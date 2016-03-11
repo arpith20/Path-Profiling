@@ -24,6 +24,7 @@ import soot.SootClass;
 import soot.SootMethod;
 import soot.Transform;
 import soot.Unit;
+import soot.UnitBox;
 import soot.jimple.InvokeExpr;
 import soot.jimple.Jimple;
 import soot.jimple.JimpleBody;
@@ -42,7 +43,15 @@ import soot.util.cfgcmd.CFGToDotGraph;
 import soot.util.dot.DotGraph;
 
 /**
+ * A Efficient Java Path Profiler
  * 
+ * Author: Arpith K
+ * 
+ * OS: Ubuntu 16.04 LTS (Beta 1)
+ * 
+ * IDE: Eclipse Neon Milestone 4 (4.6.0M5)
+ * 
+ * Java build 1.8.0_74-b02
  *
  * 
  */
@@ -677,47 +686,142 @@ public class PathProfiler extends BodyTransformer {
 	public void placeInstrumentsToClass(Body body, BriefUnitGraph cfg) {
 
 		Iterator it = instrument_encoded.entrySet().iterator();
-		while (it.hasNext()) {
-			Map.Entry pair = (Map.Entry) it.next();
-			MyEdge edge = (MyEdge) pair.getKey();
-			String val = (String) pair.getValue();
-			val = val + "#" + body.getMethod().getSignature();
+		next: while (it.hasNext()) {
+			Map.Entry pair = (Map.Entry) it.next(); // pair: (Edge,
+													// Instrumentation(encoded
+													// format))
+			MyEdge edge = (MyEdge) pair.getKey(); // extract edge
+			String val = (String) pair.getValue(); // extract instrumentation
+			val = val + "#" + body.getMethod().getSignature(); // add method
+																// information
+																// to the
+																// instrumentation
+
 			String[] tokens = val.split(":");
+
+			System.out.println("Instrument_toClass:" + edge.src + "  -- >  " + edge.tgt + " *** " + val);
+
 			if (tokens[0].equals("ini")) {
-				InvokeExpr incExpr = Jimple.v().newStaticInvokeExpr(initializeCounter.makeRef(), StringConstant.v(val));
-				Stmt incStmt = Jimple.v().newInvokeStmt(incExpr);
+				List<Unit> succ_toProcess = new ArrayList<Unit>();
+				succ_toProcess.addAll(cfg.getSuccsOf(edge.src));
 
-				if (edge.src.toString().subSequence(0, 4).equals("goto")) {
-					List<Unit> pred = cfg.getPredsOf(edge.src);
-					for (Unit u : pred) {
-						body.getUnits().insertAfter(incStmt, u);
+				boolean set = false;
+
+				System.out.println("******" + edge.src + "-->" + edge.tgt);
+
+				List<UnitBox> u_boxes = edge.src.getUnitBoxes();
+				for (UnitBox u_box : u_boxes) {
+					succ_toProcess.remove(u_box.getUnit());
+					if (u_box.getUnit() == edge.tgt) {
+
+						InvokeExpr incExpr = Jimple.v().newStaticInvokeExpr(initializeCounter.makeRef(),
+								StringConstant.v(val));
+						Stmt incStmt = Jimple.v().newInvokeStmt(incExpr);
+						body.getUnits().insertAfter(incStmt, EXIT);
+
+						body.getUnits().insertAfter(Jimple.v().newGotoStmt(edge.tgt), incStmt);
+
+						u_box.setUnit(incStmt);
+
+						set = true;
 					}
-				} else
-					body.getUnits().insertAfter(incStmt, edge.src);
+				}
 
+				if (set == false) {
+					if (succ_toProcess.get(0) == edge.tgt) {
+						InvokeExpr incExpr = Jimple.v().newStaticInvokeExpr(initializeCounter.makeRef(),
+								StringConstant.v(val));
+						Stmt incStmt = Jimple.v().newInvokeStmt(incExpr);
+						body.getUnits().insertAfter(incStmt, edge.src);
+
+						succ_toProcess.clear();
+					} else {
+						throw new NullPointerException("Something is wrong with the logic of placing instrumentation");
+					}
+				}
+				succ_toProcess.clear();
 			} else if (tokens[0].equals("inc")) {
-				InvokeExpr incExpr = Jimple.v().newStaticInvokeExpr(increaseCounter.makeRef(), StringConstant.v(val));
-				Stmt incStmt = Jimple.v().newInvokeStmt(incExpr);
+				List<Unit> succ_toProcess = new ArrayList<Unit>();
+				succ_toProcess.addAll(cfg.getSuccsOf(edge.src));
 
-				if (edge.src.toString().subSequence(0, 4).equals("goto")) {
-					List<Unit> pred = cfg.getPredsOf(edge.src);
-					for (Unit u : pred) {
-						body.getUnits().insertAfter(incStmt, u);
+				boolean set = false;
+
+				System.out.println("******" + edge.src + "-->" + edge.tgt);
+
+				List<UnitBox> u_boxes = edge.src.getUnitBoxes();
+				for (UnitBox u_box : u_boxes) {
+					succ_toProcess.remove(u_box.getUnit());
+					if (u_box.getUnit() == edge.tgt) {
+
+						InvokeExpr incExpr = Jimple.v().newStaticInvokeExpr(increaseCounter.makeRef(),
+								StringConstant.v(val));
+						Stmt incStmt = Jimple.v().newInvokeStmt(incExpr);
+						body.getUnits().insertAfter(incStmt, EXIT);
+
+						body.getUnits().insertAfter(Jimple.v().newGotoStmt(edge.tgt), incStmt);
+
+						u_box.setUnit(incStmt);
+
+						succ_toProcess.clear();
+
+						set = true;
 					}
-				} else
-					body.getUnits().insertAfter(incStmt, edge.src);
+				}
 
+				if (set == false) {
+					if (succ_toProcess.get(0) == edge.tgt) {
+						InvokeExpr incExpr = Jimple.v().newStaticInvokeExpr(increaseCounter.makeRef(),
+								StringConstant.v(val));
+						Stmt incStmt = Jimple.v().newInvokeStmt(incExpr);
+						body.getUnits().insertAfter(incStmt, edge.src);
+
+						succ_toProcess.clear();
+					} else {
+						throw new NullPointerException("Something is wrong with the logic of placing instrumentation");
+					}
+				}
+				succ_toProcess.clear();
 			} else if (tokens[0].equals("count")) {
-				InvokeExpr incExpr = Jimple.v().newStaticInvokeExpr(setCountCounter.makeRef(), StringConstant.v(val));
-				Stmt incStmt = Jimple.v().newInvokeStmt(incExpr);
-				if (edge.src.toString().subSequence(0, 4).equals("goto")) {
-					List<Unit> pred = cfg.getPredsOf(edge.src);
-					for (Unit u : pred) {
-						body.getUnits().insertAfter(incStmt, u);
-					}
-				} else
-					body.getUnits().insertAfter(incStmt, edge.src);
+				List<Unit> succ_toProcess = new ArrayList<Unit>();
+				succ_toProcess.addAll(cfg.getSuccsOf(edge.src));
 
+				boolean set = false;
+
+				System.out.println("******" + edge.src + "-->" + edge.tgt);
+
+				List<UnitBox> u_boxes = edge.src.getUnitBoxes();
+				for (UnitBox u_box : u_boxes) {
+					succ_toProcess.remove(u_box.getUnit());
+					if (u_box.getUnit() == edge.tgt) {
+
+						InvokeExpr incExpr = Jimple.v().newStaticInvokeExpr(setCountCounter.makeRef(),
+								StringConstant.v(val));
+						Stmt incStmt = Jimple.v().newInvokeStmt(incExpr);
+						body.getUnits().insertAfter(incStmt, EXIT);
+
+						body.getUnits().insertAfter(Jimple.v().newGotoStmt(edge.tgt), incStmt);
+
+						u_box.setUnit(incStmt);
+
+						succ_toProcess.clear();
+
+						set = true;
+					}
+				}
+
+				if (set == false) {
+					if (succ_toProcess.get(0) == edge.tgt) {
+						InvokeExpr incExpr = Jimple.v().newStaticInvokeExpr(setCountCounter.makeRef(),
+								StringConstant.v(val));
+						Stmt incStmt = Jimple.v().newInvokeStmt(incExpr);
+						body.getUnits().insertAfter(incStmt, edge.src);
+
+						succ_toProcess.clear();
+					} else {
+						throw new NullPointerException("Something is wrong with the logic of placing instrumentation");
+					}
+				}
+				succ_toProcess.clear();
 			}
 		}
 	}
