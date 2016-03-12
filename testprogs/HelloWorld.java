@@ -81,6 +81,28 @@ class HelloWorld{
 		System.out.println(x);
 	}
 
+	public void two_while(int x)
+	{
+		while(x==5){
+			x++;
+		}
+
+		while(x==7){
+			x++;
+		}
+		System.out.println(x);
+	}
+
+	public void nested_while(int x)
+	{
+		while(x==5){
+			while(x==12){
+				x++;
+		}
+		}
+		System.out.println(x);
+	}
+
 	public void func_month(int month){
         String monthString;
         switch (month) {
@@ -110,6 +132,25 @@ class HelloWorld{
                      break;
             default: monthString = "Invalid month";
                      break;
+        }
+	}
+
+	public void another_example(int x){
+        if(x==3){
+        	while(x<5){
+        		if(x==4){
+        			x++;
+        		}else{
+        			x--;
+        		}
+        		x++;
+        	}
+        }
+
+        if(x==4){
+        	x++;
+        }else{
+        	x--;
         }
 	}
 }

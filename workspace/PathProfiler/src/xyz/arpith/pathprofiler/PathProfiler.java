@@ -72,7 +72,7 @@ public class PathProfiler extends BodyTransformer {
 	 */
 	boolean regeneratePath = false;
 
-	boolean placeInst = true; // Specify whether you want to modify the class
+	boolean placeInst = false; // Specify whether you want to modify the class
 								// files. Use with caution.
 
 	static boolean printToFile = false; // commenting such obvious things is an
@@ -230,9 +230,9 @@ public class PathProfiler extends BodyTransformer {
 						if (retriveEdge(unit, succ, this) == null) {
 							MyEdge back = new MyEdge(unit, succ);
 							backedges.add(back);
-							instrument.put(back, "r=0; count[r]++; ");
-							instrument_encoded.put(back, "count:r:0");
-							instrument_encoded.put(back, "ini:0");
+							// instrument.put(back, "r=0; count[r]++; ");
+							// instrument_encoded.put(back, "count:r:0");
+							// instrument_encoded.put(back, "ini:0");
 
 							if (retriveEdge(ENTRY, succ, this) == null) {
 								MyEdge ent = new MyEdge(ENTRY, succ);
@@ -898,7 +898,7 @@ public class PathProfiler extends BodyTransformer {
 
 		while (!WS.isEmpty()) {
 			Unit v = WS.remove();
-			List<Unit> succ = cfg.getSuccsOf(v);
+			List<Unit> succ = dag.getSuccsOf(v);
 			// if (v == EXIT) {
 			// succ.add(ENTRY);
 			// }
@@ -909,7 +909,7 @@ public class PathProfiler extends BodyTransformer {
 					instrument.put(e, value);
 					instrument_encoded.put(e, "ini:" + inc.get(e));
 				} // else if (w == ENTRY || cfg.getPredsOf(w).size() == 1) {
-				else if (cfg.getPredsOf(w).size() == 1) {
+				else if (dag.getPredsOf(w).size() == 1) {
 					WS.add(w);
 				} else {
 					instrument.put(e, "r=0");
@@ -938,7 +938,7 @@ public class PathProfiler extends BodyTransformer {
 						instrument_encoded.put(e, "count:r:" + inc.get(e));
 					}
 				} // else if (v == EXIT || cfg.getSuccsOf(v).size() == 1) {
-				else if (cfg.getSuccsOf(v).size() == 1) {
+				else if (dag.getSuccsOf(v).size() == 1) {
 					WS.add(v);
 				} else {
 					instrument.put(e, "count[r]++");
@@ -969,13 +969,19 @@ public class PathProfiler extends BodyTransformer {
 				} else if (edge.src == ENTRY) {
 					// To handle backedges; sets r=0 and count[r]++
 					instrument_encoded.put(backedge, "reinitialize");
-					throw new Error("BACKEDGE: Unhandled case. Path counter initialization");
+					// throw new Error("BACKEDGE: Unhandled case. Path counter
+					// initialization");
 				} else {
 					throw new Error("Consistency of artificial_list is not maintained");
 				}
-				System.out.println("Instrument:" + backedge.src + "  -- >  " + backedge.tgt + " *** " + val);
-			} else
-				System.out.println("Instrument:" + edge.src + "  -- >  " + edge.tgt + " *** " + val);
+				// System.out.println("Instrument:" + backedge.src + " -- > " +
+				// backedge.tgt + " *** " + val);
+			} else {
+				// System.out.println("Instrument:" + edge.src + " -- > " +
+				// edge.tgt + " *** " + val);
+
+			}
+			System.out.println("Instrument:" + edge.src + " -- > " + edge.tgt + " *** " + val);
 		}
 	}
 
