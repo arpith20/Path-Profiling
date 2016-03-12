@@ -56,8 +56,8 @@ import soot.util.dot.DotGraph;
  * 
  */
 
-//TODO: Handle backedge's instrumentation
-//TODO: handle system.exit(0) cases
+// TODO: Handle backedge's instrumentation
+// TODO: handle system.exit(0) cases
 public class PathProfiler extends BodyTransformer {
 
 	Unit ENTRY; // Entry node of the graph
@@ -209,6 +209,7 @@ public class PathProfiler extends BodyTransformer {
 					singleexit.add(e);
 				}
 			}
+
 			Iterator<Unit> cfg_iterator = cfg.iterator();
 			while (cfg_iterator.hasNext()) {
 				Unit unit = cfg_iterator.next();
@@ -226,22 +227,29 @@ public class PathProfiler extends BodyTransformer {
 						 * To use alternate method, comment the following lines
 						 * and uncomment the other
 						 */
-						MyEdge back = new MyEdge(unit, succ);
-						backedges.add(back);
-						instrument.put(back, "r=0; count[r]++; ");
-						instrument_encoded.put(back, "count:r:0");
-						instrument_encoded.put(back, "ini:0");
+						if (retriveEdge(unit, succ, this) == null) {
+							MyEdge back = new MyEdge(unit, succ);
+							backedges.add(back);
+							instrument.put(back, "r=0; count[r]++; ");
+							instrument_encoded.put(back, "count:r:0");
+							instrument_encoded.put(back, "ini:0");
 
-						MyEdge ent = new MyEdge(ENTRY, succ);
-						edges.add(ent);
-						artificial.put(ent, back);
-						artificial_list.add(ent);
+							if (retriveEdge(ENTRY, succ, this) == null) {
+								MyEdge ent = new MyEdge(ENTRY, succ);
+								edges.add(ent);
+								artificial.put(ent, back);
+								artificial_list.add(ent);
+							}
 
-						MyEdge ext = new MyEdge(unit, EXIT);
-						edges.add(ext);
-						artificial.put(ext, back);
-						artificial_list.add(ext);
+							if (retriveEdge(unit, EXIT, this) == null) {
+								MyEdge ext = new MyEdge(unit, EXIT);
+								edges.add(ext);
+								artificial.put(ext, back);
+								artificial_list.add(ext);
+							}
+						}
 
+						// legacy code. NOT used
 						useFailSafe = true;
 
 						/*
@@ -871,7 +879,7 @@ public class PathProfiler extends BodyTransformer {
 			Map.Entry pair = (Map.Entry) it.next();
 			MyEdge edge = (MyEdge) pair.getKey();
 			String val = (String) pair.getValue();
-			System.out.println("Instrument:" + edge.src + "  -- >  " + edge.tgt + " *** " + val);
+			System.out.println("Instrument_fs:" + edge.src + "  -- >  " + edge.tgt + " *** " + val);
 		}
 	}
 
@@ -954,6 +962,17 @@ public class PathProfiler extends BodyTransformer {
 			String val = (String) pair.getValue();
 			if (edge.isContainedIn(dag.artificial_list)) {
 				MyEdge backedge = dag.artificial.get(edge);
+				String inst = instrument_encoded.get(edge);
+				instrument_encoded.remove(edge);
+				if (edge.tgt == EXIT) {
+					instrument_encoded.put(backedge, inst);
+				} else if (edge.src == ENTRY) {
+					// To handle backedges; sets r=0 and count[r]++
+					instrument_encoded.put(backedge, "reinitialize");
+					throw new Error("BACKEDGE: Unhandled case. Path counter initialization");
+				} else {
+					throw new Error("Consistency of artificial_list is not maintained");
+				}
 				System.out.println("Instrument:" + backedge.src + "  -- >  " + backedge.tgt + " *** " + val);
 			} else
 				System.out.println("Instrument:" + edge.src + "  -- >  " + edge.tgt + " *** " + val);
