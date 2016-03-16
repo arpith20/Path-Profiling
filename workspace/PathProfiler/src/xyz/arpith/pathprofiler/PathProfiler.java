@@ -713,6 +713,159 @@ public class PathProfiler extends BodyTransformer {
 
 			String[] tokens = val.split(":");
 
+			// Format: backedge#ini:0#count:r:x#signature
+			if (tokens[0].contains("backedge")) {
+				String[] tokens_be = val.split("#");
+
+				String val_ini = null, val_count = null;
+
+				if (tokens_be[1].contains("ini")) {
+					val_ini = tokens_be[1] + "#" + body.getMethod().getSignature();
+				} else if (tokens_be[2].contains("ini")) {
+					val_ini = tokens_be[2] + "#" + body.getMethod().getSignature();
+				}
+
+				if (tokens_be[1].contains("count")) {
+					val_count = tokens_be[1] + "#" + body.getMethod().getSignature();
+				} else if (tokens_be[2].contains("count")) {
+					val_count = tokens_be[2] + "#" + body.getMethod().getSignature();
+				}
+
+				if (val_ini == null && val_count == null)
+					throw new Error("How did I get here!? Backedge contains no instrumentable data");
+				else if (val_ini != null && val_count == null) {
+					// set only r=0
+					List<Unit> succ_toProcess = new ArrayList<Unit>();
+					succ_toProcess.addAll(cfg.getSuccsOf(edge.src));
+
+					boolean set = false;
+
+					System.out.println("Instrument_toClass:" + edge.src + "  -- >  " + edge.tgt + " *** " + val);
+
+					List<UnitBox> u_boxes = edge.src.getUnitBoxes();
+					for (UnitBox u_box : u_boxes) {
+						succ_toProcess.remove(u_box.getUnit());
+						if (u_box.getUnit() == edge.tgt) {
+
+							InvokeExpr incExpr = Jimple.v().newStaticInvokeExpr(initializeCounter.makeRef(),
+									StringConstant.v(val_ini));
+							Stmt incStmt = Jimple.v().newInvokeStmt(incExpr);
+							body.getUnits().insertAfter(incStmt, EXIT);
+
+							body.getUnits().insertAfter(Jimple.v().newGotoStmt(edge.tgt), incStmt);
+
+							u_box.setUnit(incStmt);
+
+							set = true;
+						}
+					}
+
+					if (set == false) {
+						if (succ_toProcess.get(0) == edge.tgt) {
+							InvokeExpr incExpr = Jimple.v().newStaticInvokeExpr(initializeCounter.makeRef(),
+									StringConstant.v(val_ini));
+							Stmt incStmt = Jimple.v().newInvokeStmt(incExpr);
+							body.getUnits().insertAfter(incStmt, edge.src);
+
+							succ_toProcess.clear();
+						} else {
+							throw new Error("Something is wrong with the logic of placing instrumentation");
+						}
+					}
+					succ_toProcess.clear();
+				} else if (val_ini == null && val_count != null) {
+					// set only count[r+x]++
+					List<Unit> succ_toProcess = new ArrayList<Unit>();
+					succ_toProcess.addAll(cfg.getSuccsOf(edge.src));
+
+					boolean set = false;
+
+					System.out.println("Instrument_toClass:" + edge.src + "  -- >  " + edge.tgt + " *** " + val);
+
+					List<UnitBox> u_boxes = edge.src.getUnitBoxes();
+					for (UnitBox u_box : u_boxes) {
+						succ_toProcess.remove(u_box.getUnit());
+						if (u_box.getUnit() == edge.tgt) {
+
+							InvokeExpr incExpr = Jimple.v().newStaticInvokeExpr(setCountCounter.makeRef(),
+									StringConstant.v(val_count));
+							Stmt incStmt = Jimple.v().newInvokeStmt(incExpr);
+							body.getUnits().insertAfter(incStmt, EXIT);
+
+							body.getUnits().insertAfter(Jimple.v().newGotoStmt(edge.tgt), incStmt);
+
+							u_box.setUnit(incStmt);
+
+							set = true;
+						}
+					}
+
+					if (set == false) {
+						if (succ_toProcess.get(0) == edge.tgt) {
+							InvokeExpr incExpr = Jimple.v().newStaticInvokeExpr(setCountCounter.makeRef(),
+									StringConstant.v(val_count));
+							Stmt incStmt = Jimple.v().newInvokeStmt(incExpr);
+							body.getUnits().insertAfter(incStmt, edge.src);
+
+							succ_toProcess.clear();
+						} else {
+							throw new Error("Something is wrong with the logic of placing instrumentation");
+						}
+					}
+					succ_toProcess.clear();
+				} else if (val_ini != null && val_count != null) {
+					// set r=0; count[r+x]++
+					List<Unit> succ_toProcess = new ArrayList<Unit>();
+					succ_toProcess.addAll(cfg.getSuccsOf(edge.src));
+
+					boolean set = false;
+
+					System.out.println("Instrument_toClass:" + edge.src + "  -- >  " + edge.tgt + " *** " + val);
+
+					List<UnitBox> u_boxes = edge.src.getUnitBoxes();
+					for (UnitBox u_box : u_boxes) {
+						succ_toProcess.remove(u_box.getUnit());
+						if (u_box.getUnit() == edge.tgt) {
+
+							InvokeExpr incExpr = Jimple.v().newStaticInvokeExpr(initializeCounter.makeRef(),
+									StringConstant.v(val_ini));
+							Stmt incStmt0 = Jimple.v().newInvokeStmt(incExpr);
+							body.getUnits().insertAfter(incStmt0, EXIT);
+
+							incExpr = Jimple.v().newStaticInvokeExpr(setCountCounter.makeRef(),
+									StringConstant.v(val_count));
+							Stmt incStmt = Jimple.v().newInvokeStmt(incExpr);
+							body.getUnits().insertAfter(incStmt, incStmt0);
+
+							body.getUnits().insertAfter(Jimple.v().newGotoStmt(edge.tgt), incStmt);
+
+							u_box.setUnit(incStmt0);
+
+							set = true;
+						}
+					}
+
+					if (set == false) {
+						if (succ_toProcess.get(0) == edge.tgt) {
+							InvokeExpr incExpr = Jimple.v().newStaticInvokeExpr(initializeCounter.makeRef(),
+									StringConstant.v(val_ini));
+							Stmt incStmt0 = Jimple.v().newInvokeStmt(incExpr);
+							body.getUnits().insertAfter(incStmt0, edge.src);
+
+							incExpr = Jimple.v().newStaticInvokeExpr(setCountCounter.makeRef(),
+									StringConstant.v(val_count));
+							Stmt incStmt = Jimple.v().newInvokeStmt(incExpr);
+							body.getUnits().insertAfter(incStmt, incStmt0);
+
+							succ_toProcess.clear();
+						} else {
+							throw new Error("Something is wrong with the logic of placing instrumentation");
+						}
+					}
+					succ_toProcess.clear();
+				}
+			}
+
 			if (tokens[0].equals("ini")) {
 				List<Unit> succ_toProcess = new ArrayList<Unit>();
 				succ_toProcess.addAll(cfg.getSuccsOf(edge.src));
@@ -962,23 +1115,18 @@ public class PathProfiler extends BodyTransformer {
 			String val = (String) pair.getValue();
 			if (edge.isContainedIn(dag.artificial_list)) {
 				MyEdge backedge = dag.artificial.get(edge);
-				String inst = instrument_encoded.get(edge);
+				String instrumentation = instrument_encoded.get(edge);
 				instrument_encoded.remove(edge);
-				if (edge.tgt == EXIT) {
-					instrument_encoded.put(backedge, inst);
-				} else if (edge.src == ENTRY) {
-					// To handle backedges; sets r=0 and count[r]++
-					instrument_encoded.put(backedge, "reinitialize");
-					// throw new Error("BACKEDGE: Unhandled case. Path counter
-					// initialization");
-				} else {
-					throw new Error("Consistency of artificial_list is not maintained");
+
+				// new_instrumentation is the instrumentation to be placed in
+				// backedge
+				// Format: backedge#ini:0#count:r:x
+				String new_instrumentation = instrument_encoded.get(backedge);
+				if (new_instrumentation == null) {
+					new_instrumentation = "backedge";
 				}
-				// System.out.println("Instrument:" + backedge.src + " -- > " +
-				// backedge.tgt + " *** " + val);
-			} else {
-				// System.out.println("Instrument:" + edge.src + " -- > " +
-				// edge.tgt + " *** " + val);
+				new_instrumentation += "#" + instrumentation;
+				instrument_encoded.put(backedge, new_instrumentation);
 
 			}
 			System.out.println("Instrument:" + edge.src + " -- > " + edge.tgt + " *** " + val);
