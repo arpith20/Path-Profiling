@@ -103,6 +103,18 @@ class HelloWorld{
 		System.out.println(x);
 	}
 
+	public void one_exit(int x){
+		System.exit(3);
+	}
+
+	public void two_exits(int x){
+		if(x==1)
+			System.exit(0);
+		else
+			System.exit(2);
+
+	}
+
 	public void func_month(int month){
         String monthString;
         switch (month) {

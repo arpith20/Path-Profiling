@@ -630,8 +630,14 @@ public class PathProfiler extends BodyTransformer {
 				/*
 				 * This is responsible for instrumenting the class files
 				 */
-				if (placeInst)
+				if (placeInst) {
 					placeInstrumentsToClass(body, cfg);
+
+					// place rest of the instruments.
+					// this includes:
+					// dummy_back_edge's instrumentations
+					placeInstrumentsToClass_extended(body, cfg);
+				}
 
 				/*
 				 * Various display options. Use as required
@@ -735,7 +741,8 @@ public class PathProfiler extends BodyTransformer {
 	 */
 	public void placeInstrumentsToClass(Body body, BriefUnitGraph cfg) {
 
-		Iterator it = instrument_encoded.entrySet().iterator();
+		HashMap<MyEdge, String> instrument_encoded_temp = new HashMap<MyEdge, String>(instrument_encoded);
+		Iterator it = instrument_encoded_temp.entrySet().iterator();
 		while (it.hasNext()) {
 			// pair: (Edge, Instrumentation(encoded format))
 			Map.Entry pair = (Map.Entry) it.next();
@@ -903,37 +910,16 @@ public class PathProfiler extends BodyTransformer {
 					}
 					succ_toProcess.clear();
 				}
+				instrument_encoded.remove(edge);
 			}
 
 			// dummy_exit_edge#ini:0#signature
 			if (tokens[0].contains("dummy_exit_edge")) {
-				System.out.println("Instrument_toClass:" + edge.src + "  -- >  " + edge.tgt + " *** " + val);
-
-				System.out.println(tokens[0]);
-				// remove the string dummy_exit_edge# from val
-				String[] temp_tokens = val.split("#");
-				val = temp_tokens[1] + "#" + temp_tokens[2];
-
-				String[] tokens2 = val.split(":");
-				if (tokens2[0].equals("ini")) {
-					InvokeExpr incExpr = Jimple.v().newStaticInvokeExpr(initializeCounter.makeRef(),
-							StringConstant.v(val));
-					Stmt incStmt = Jimple.v().newInvokeStmt(incExpr);
-					body.getUnits().insertBefore(incStmt, edge.src);
-				} else if (tokens2[0].equals("inc")) {
-					InvokeExpr incExpr = Jimple.v().newStaticInvokeExpr(increaseCounter.makeRef(),
-							StringConstant.v(val));
-					Stmt incStmt = Jimple.v().newInvokeStmt(incExpr);
-					body.getUnits().insertBefore(incStmt, edge.src);
-				} else if (tokens2[0].equals("count")) {
-					InvokeExpr incExpr = Jimple.v().newStaticInvokeExpr(setCountCounter.makeRef(),
-							StringConstant.v(val));
-					Stmt incStmt = Jimple.v().newInvokeStmt(incExpr);
-					body.getUnits().insertBefore(incStmt, edge.src);
-				}
-			}
-
-			if (tokens[0].equals("ini")) {
+				// do not process now. Such edges have to be processed at the
+				// end. Failing which some problems can occur. (Example with
+				// two_exits() test case <in case where we do not disturb
+				// system.exit>)
+			} else if (tokens[0].equals("ini")) {
 				List<Unit> succ_toProcess = new ArrayList<Unit>();
 				succ_toProcess.addAll(cfg.getSuccsOf(edge.src));
 
@@ -972,6 +958,7 @@ public class PathProfiler extends BodyTransformer {
 					}
 				}
 				succ_toProcess.clear();
+				instrument_encoded.remove(edge);
 			} else if (tokens[0].equals("inc")) {
 				List<Unit> succ_toProcess = new ArrayList<Unit>();
 				succ_toProcess.addAll(cfg.getSuccsOf(edge.src));
@@ -1013,6 +1000,7 @@ public class PathProfiler extends BodyTransformer {
 					}
 				}
 				succ_toProcess.clear();
+				instrument_encoded.remove(edge);
 			} else if (tokens[0].equals("count")) {
 				List<Unit> succ_toProcess = new ArrayList<Unit>();
 				succ_toProcess.addAll(cfg.getSuccsOf(edge.src));
@@ -1054,6 +1042,93 @@ public class PathProfiler extends BodyTransformer {
 					}
 				}
 				succ_toProcess.clear();
+				instrument_encoded.remove(edge);
+			}
+		}
+	}
+
+	public void placeInstrumentsToClass_extended(Body body, BriefUnitGraph cfg) {
+		HashMap<MyEdge, String> instrument_encoded_temp = new HashMap<MyEdge, String>(instrument_encoded);
+		Iterator it = instrument_encoded_temp.entrySet().iterator();
+		while (it.hasNext()) {
+			// pair: (Edge, Instrumentation(encoded format))
+			Map.Entry pair = (Map.Entry) it.next();
+
+			// extract edge
+			MyEdge edge = (MyEdge) pair.getKey();
+
+			// extract instrumentation
+			String val = (String) pair.getValue();
+
+			// add method information to the instrumentation
+			// This information is then used by the counter
+			val = val + "#" + body.getMethod().getSignature();
+
+			String[] tokens = val.split(":");
+
+			// dummy_exit_edge#ini:0#signature
+			if (tokens[0].contains("dummy_exit_edge")) {
+				System.out.println("Instrument_toClass:" + edge.src + "  -- >  " + edge.tgt + " *** " + val);
+
+				System.out.println(tokens[0]);
+				// remove the string dummy_exit_edge# from val
+				String[] temp_tokens = val.split("#");
+				val = temp_tokens[1] + "#" + temp_tokens[2];
+
+				String[] tokens2 = val.split(":");
+				if (tokens2[0].equals("ini")) {
+					InvokeExpr incExpr = Jimple.v().newStaticInvokeExpr(initializeCounter.makeRef(),
+							StringConstant.v(val));
+					Stmt incStmt = Jimple.v().newInvokeStmt(incExpr);
+
+					// if the predecessors contain gotos then redirect them
+					List<Unit> preds = cfg.getPredsOf(edge.src);
+					for (Unit pred : preds) {
+						List<UnitBox> pred_boxes = pred.getUnitBoxes();
+						for (UnitBox pred_box : pred_boxes) {
+							if (pred_box.getUnit() == edge.src) {
+								pred_box.setUnit(incStmt);
+							}
+						}
+					}
+
+					body.getUnits().insertBefore(incStmt, edge.src);
+
+				} else if (tokens2[0].equals("inc")) {
+					InvokeExpr incExpr = Jimple.v().newStaticInvokeExpr(increaseCounter.makeRef(),
+							StringConstant.v(val));
+					Stmt incStmt = Jimple.v().newInvokeStmt(incExpr);
+
+					// if the predecessors contain gotos then redirect them
+					List<Unit> preds = cfg.getPredsOf(edge.src);
+					for (Unit pred : preds) {
+						List<UnitBox> pred_boxes = pred.getUnitBoxes();
+						for (UnitBox pred_box : pred_boxes) {
+							if (pred_box.getUnit() == edge.src) {
+								pred_box.setUnit(incStmt);
+							}
+						}
+					}
+
+					body.getUnits().insertBefore(incStmt, edge.src);
+				} else if (tokens2[0].equals("count")) {
+					InvokeExpr incExpr = Jimple.v().newStaticInvokeExpr(setCountCounter.makeRef(),
+							StringConstant.v(val));
+					Stmt incStmt = Jimple.v().newInvokeStmt(incExpr);
+
+					// if the predecessors contain gotos then redirect them
+					List<Unit> preds = cfg.getPredsOf(edge.src);
+					for (Unit pred : preds) {
+						List<UnitBox> pred_boxes = pred.getUnitBoxes();
+						for (UnitBox pred_box : pred_boxes) {
+							if (pred_box.getUnit() == edge.src) {
+								pred_box.setUnit(incStmt);
+							}
+						}
+					}
+
+					body.getUnits().insertBefore(incStmt, edge.src);
+				}
 			}
 		}
 	}
