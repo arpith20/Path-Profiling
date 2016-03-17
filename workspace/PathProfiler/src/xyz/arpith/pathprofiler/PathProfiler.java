@@ -47,9 +47,9 @@ import soot.util.dot.DotGraph;
  * 
  * Author: Arpith K
  * 
- * OS: Ubuntu 16.04 LTS (Beta 1)
+ * OS: Ubuntu 16.04 LTS (development branch)
  * 
- * IDE: Eclipse Neon Milestone 4 (4.6.0M5)
+ * IDE: Eclipse Neon Milestone 5 (4.6.0M5)
  * 
  * Java build 1.8.0_74-b02
  *
@@ -72,8 +72,11 @@ public class PathProfiler extends BodyTransformer {
 	 */
 	boolean regeneratePath = false;
 
-	boolean placeInst = false; // Specify whether you want to modify the class
-								// files. Use with caution.
+	// Specify whether you want to modify the class files. Use with caution.
+	boolean placeInst = true;
+
+	// specify if processing functions with multiple return points is alowed
+	boolean allowMultiReturnPoints = true;
 
 	static boolean printToFile = false; // commenting such obvious things is an
 	// overkill :D
@@ -142,6 +145,9 @@ public class PathProfiler extends BodyTransformer {
 		List<MyEdge> singleexit;// This stores edges that is responsible for
 								// converting the
 
+		// Stores all edges from real tails to dummy_exit
+		List<MyEdge> dummy_exit_edge_list;
+
 		// Initialize above data members of DAG class
 		DAG() {
 			edges = new ArrayList<MyEdge>();
@@ -151,6 +157,7 @@ public class PathProfiler extends BodyTransformer {
 			artificial_list = new ArrayList<MyEdge>();
 			original = new ArrayList<MyEdge>();
 			singleexit = new ArrayList<MyEdge>();
+			dummy_exit_edge_list = new ArrayList<MyEdge>();
 		}
 
 		/*
@@ -288,6 +295,20 @@ public class PathProfiler extends BodyTransformer {
 							original.add(e);
 						}
 					}
+				}
+			}
+		}
+
+		public void add_edges_to_dummy_exit(BriefUnitGraph cfg) {
+			List<Unit> tails = cfg.getTails();
+			for (Unit tail : tails) {
+				if (retriveEdge(tail, EXIT, this) == null) {
+					if (dummy_exit_edge_list.size() == 0) {
+						visited.add(EXIT);
+					}
+					MyEdge e = new MyEdge(tail, EXIT);
+					edges.add(e);
+					dummy_exit_edge_list.add(e);
 				}
 			}
 		}
@@ -517,6 +538,10 @@ public class PathProfiler extends BodyTransformer {
 				EXIT = cfg.getTails().get(0);
 
 				/*
+				 * Update: Multiple return points is properly supported
+				 * 
+				 * Ignore the text that follows
+				 * 
 				 * The following ignores methods with multiple end points as it
 				 * is not considered in the paper.
 				 * 
@@ -526,8 +551,9 @@ public class PathProfiler extends BodyTransformer {
 				 * Just comment the following code if you wish to analyze such
 				 * methods.
 				 */
-				if (cfg.getTails().size() > 1)
-					return;
+				if (allowMultiReturnPoints == false)
+					if (cfg.getTails().size() > 1)
+						return;
 
 				// display signature of method being analyzed
 				System.out.println();
@@ -541,6 +567,17 @@ public class PathProfiler extends BodyTransformer {
 				// build DAG
 				DAG dag = new DAG();
 				dag.buildDAG(cfg);
+
+				/*
+				 * the following ensures that we have only one EXIT point
+				 */
+				// Insert a dummy unit after that first original return point;
+				Unit dummy_exit = Jimple.v().newReturnVoidStmt();
+				body.getUnits().insertAfter(dummy_exit, cfg.getTails().get(0));
+				EXIT = dummy_exit;
+
+				// now, add edges from the natural tails to this dummy_exit
+				dag.add_edges_to_dummy_exit(cfg);
 
 				// for initial stage testing
 				// fabricatedata(cfg);
@@ -866,6 +903,34 @@ public class PathProfiler extends BodyTransformer {
 				}
 			}
 
+			// dummy_exit_edge#ini:0#signature
+			if (tokens[0].contains("dummy_exit_edge")) {
+				System.out.println("Instrument_toClass:" + edge.src + "  -- >  " + edge.tgt + " *** " + val);
+
+				System.out.println(tokens[0]);
+				// remove the string dummy_exit_edge# from val
+				String[] temp_tokens = val.split("#");
+				val = temp_tokens[1] + "#" + temp_tokens[2];
+
+				String[] tokens2 = val.split(":");
+				if (tokens2[0].equals("ini")) {
+					InvokeExpr incExpr = Jimple.v().newStaticInvokeExpr(initializeCounter.makeRef(),
+							StringConstant.v(val));
+					Stmt incStmt = Jimple.v().newInvokeStmt(incExpr);
+					body.getUnits().insertBefore(incStmt, edge.src);
+				} else if (tokens2[0].equals("inc")) {
+					InvokeExpr incExpr = Jimple.v().newStaticInvokeExpr(increaseCounter.makeRef(),
+							StringConstant.v(val));
+					Stmt incStmt = Jimple.v().newInvokeStmt(incExpr);
+					body.getUnits().insertBefore(incStmt, edge.src);
+				} else if (tokens2[0].equals("count")) {
+					InvokeExpr incExpr = Jimple.v().newStaticInvokeExpr(setCountCounter.makeRef(),
+							StringConstant.v(val));
+					Stmt incStmt = Jimple.v().newInvokeStmt(incExpr);
+					body.getUnits().insertBefore(incStmt, edge.src);
+				}
+			}
+
 			if (tokens[0].equals("ini")) {
 				List<Unit> succ_toProcess = new ArrayList<Unit>();
 				succ_toProcess.addAll(cfg.getSuccsOf(edge.src));
@@ -1129,6 +1194,14 @@ public class PathProfiler extends BodyTransformer {
 				instrument_encoded.put(backedge, new_instrumentation);
 
 			}
+
+			if (edge.isContainedIn(dag.dummy_exit_edge_list)) {
+				String instrumentation = instrument_encoded.get(edge);
+				instrumentation = "dummy_exit_edge#" + instrumentation;
+				instrument_encoded.put(edge, instrumentation);
+				System.out.println("@@");
+			}
+
 			System.out.println("Instrument:" + edge.src + " -- > " + edge.tgt + " *** " + val);
 		}
 	}
