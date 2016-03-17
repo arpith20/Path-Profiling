@@ -566,7 +566,6 @@ public class PathProfiler extends BodyTransformer {
 
 				// build DAG
 				DAG dag = new DAG();
-				dag.buildDAG(cfg);
 
 				/*
 				 * the following ensures that we have only one EXIT point
@@ -578,6 +577,9 @@ public class PathProfiler extends BodyTransformer {
 
 				// now, add edges from the natural tails to this dummy_exit
 				dag.add_edges_to_dummy_exit(cfg);
+
+				// build the rest of the DAG
+				dag.buildDAG(cfg);
 
 				// for initial stage testing
 				// fabricatedata(cfg);
