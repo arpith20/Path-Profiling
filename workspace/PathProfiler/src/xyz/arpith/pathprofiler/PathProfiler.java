@@ -25,11 +25,13 @@ import soot.SootMethod;
 import soot.Transform;
 import soot.Unit;
 import soot.UnitBox;
+import soot.baf.StaticInvokeInst;
 import soot.jimple.InvokeExpr;
 import soot.jimple.Jimple;
 import soot.jimple.JimpleBody;
 import soot.jimple.ReturnStmt;
 import soot.jimple.ReturnVoidStmt;
+import soot.jimple.StaticInvokeExpr;
 import soot.jimple.Stmt;
 import soot.jimple.StringConstant;
 import soot.options.Options;
@@ -77,6 +79,8 @@ public class PathProfiler extends BodyTransformer {
 
 	// specify if processing functions with multiple return points is alowed
 	boolean allowMultiReturnPoints = true;
+
+	boolean replaceSystemExit = true;
 
 	static boolean printToFile = false; // commenting such obvious things is an
 	// overkill :D
@@ -537,6 +541,41 @@ public class PathProfiler extends BodyTransformer {
 				ENTRY = cfg.getHeads().get(0);
 				EXIT = cfg.getTails().get(0);
 
+				if (replaceSystemExit == true) {
+					Chain units = body.getUnits();
+					Iterator stmtIt = units.snapshotIterator();
+
+					List<Unit> system_exit_units = new ArrayList<Unit>();
+					while (stmtIt.hasNext()) {
+						Stmt stmt = (Stmt) stmtIt.next();
+
+						// just for safety :)
+						if (stmt == null)
+							break;
+
+						String test_stmt = stmt.toString();
+						if (test_stmt.length() >= 46 && test_stmt.substring(0, 46)
+								.contains("staticinvoke <java.lang.System: void exit(int)")) {
+							System.out.println("*****" + stmt.toString());
+							if (!system_exit_units.contains(stmt)) {
+								system_exit_units.add(stmt);
+								body.getUnits().insertBefore(Jimple.v().newReturnVoidStmt(), stmt);
+							}
+						}
+					}
+
+					// rebuild CFG
+					cfg = new BriefUnitGraph(body);
+
+					// remove all disconnected graphs
+					clear_extra_forest(body, cfg);
+
+					// rebuild CFG
+					cfg = new BriefUnitGraph(body);
+				}
+
+				// print_cfg(b);
+
 				/*
 				 * Update: Multiple return points is properly supported
 				 * 
@@ -622,10 +661,10 @@ public class PathProfiler extends BodyTransformer {
 				 * placeInstrumentsToClass
 				 * 
 				 */
-				if (cfg.getTails().size() != 1)
-					failSafePlaceInstruments(cfg, dag);
-				else
-					placeInstruments(cfg, dag);
+				// if (cfg.getTails().size() != 1)
+				// failSafePlaceInstruments(cfg, dag);
+				// else
+				placeInstruments(cfg, dag);
 
 				/*
 				 * This is responsible for instrumenting the class files
@@ -680,6 +719,34 @@ public class PathProfiler extends BodyTransformer {
 				instrument_encoded.clear();
 			}
 		}
+	}
+
+	/*
+	 * Putting return statements before System.exit(x) creates disjoint graphs
+	 * (forest). Keeping such forests can cause issues with creation of spanning
+	 * trees. Hence this has to be removed.
+	 */
+	public void clear_extra_forest(Body body, BriefUnitGraph cfg) {
+		while (cfg.getHeads().size() != 1) {
+			List<Unit> heads = cfg.getHeads();
+			for (Unit head : heads) {
+				if (head == ENTRY)
+					continue;
+				Queue<Unit> queue = new LinkedList();
+				queue.add(head);
+				while (!queue.isEmpty()) {
+					Unit u_remove = queue.remove();
+					queue.addAll(cfg.getSuccsOf(u_remove));
+					body.getUnits().remove(u_remove);
+				}
+
+			}
+			cfg = new BriefUnitGraph(body);
+		}
+	}
+
+	public boolean get_extra_heads(BriefUnitGraph cfg) {
+		return false;
 	}
 
 	/*
