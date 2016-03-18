@@ -103,6 +103,9 @@ public class PathProfiler extends BodyTransformer {
 	// Stores instrumentation data in a form that is used by this implementation
 	HashMap<MyEdge, String> instrument_encoded = new HashMap<MyEdge, String>();
 
+	// Stores all return units added to handle System.exit
+	List<Unit> sys_exit_unit_ret = new ArrayList<Unit>();
+
 	/*
 	 * Code from CFG Viewer. CFG ciewer generates a dot file in sootOutpot
 	 * directory which can be used to graphically view the control flow graph of
@@ -125,7 +128,7 @@ public class PathProfiler extends BodyTransformer {
 
 	// This is required for instrumentation. Look at MyCounter.java
 	SootClass counterClass = null;
-	SootMethod increaseCounter, reportCounter, initializeCounter, setCountCounter;
+	SootMethod increaseCounter, reportCounter, initializeCounter, setCountCounter, reportCounter_sysexit;
 
 	// This graph is responsible for converting the given CFG to DAG
 	public class DAG {
@@ -488,6 +491,7 @@ public class PathProfiler extends BodyTransformer {
 				initializeCounter = counterClass.getMethod("void initialize(java.lang.String)");
 				setCountCounter = counterClass.getMethod("void setCount(java.lang.String)");
 				reportCounter = counterClass.getMethod("void report()");
+				reportCounter_sysexit = counterClass.getMethod("void report_sys_exit(java.lang.String)");
 			}
 
 			// method currently under observation
@@ -554,12 +558,24 @@ public class PathProfiler extends BodyTransformer {
 							break;
 
 						String test_stmt = stmt.toString();
+
+						// Note: Heuristic used
+						// If the cirrent unit is System.exit
 						if (test_stmt.length() >= 46 && test_stmt.substring(0, 46)
 								.contains("staticinvoke <java.lang.System: void exit(int)")) {
 							System.out.println("*****" + stmt.toString());
 							if (!system_exit_units.contains(stmt)) {
 								system_exit_units.add(stmt);
-								body.getUnits().insertBefore(Jimple.v().newReturnVoidStmt(), stmt);
+
+								// Retrieve the exit code.
+								// Note: Heuristic used
+								String exit_code = stmt.toString().split(">")[1].substring(1,
+										stmt.toString().split(">")[1].length() - 1);
+
+								Unit dummy_unit = Jimple.v().newReturnVoidStmt();
+								body.getUnits().insertBefore(dummy_unit, stmt);
+
+								sys_exit_unit_ret.add(dummy_unit);
 							}
 						}
 					}
@@ -674,7 +690,8 @@ public class PathProfiler extends BodyTransformer {
 
 					// place rest of the instruments.
 					// this includes:
-					// dummy_back_edge's instrumentations
+					// 1) dummy_back_edge's instrumentations
+					// 2) a call to My counters's report_sys_exit
 					placeInstrumentsToClass_extended(body, cfg);
 				}
 
@@ -717,6 +734,7 @@ public class PathProfiler extends BodyTransformer {
 				inc.clear();
 				instrument.clear();
 				instrument_encoded.clear();
+				sys_exit_unit_ret.clear();
 			}
 		}
 	}
@@ -1197,6 +1215,14 @@ public class PathProfiler extends BodyTransformer {
 					body.getUnits().insertBefore(incStmt, edge.src);
 				}
 			}
+		}
+
+		// Step 2:
+		// Add call to MyCounter's report_sys_exit
+		for (Unit ret_units : sys_exit_unit_ret) {
+			InvokeExpr incExpr = Jimple.v().newStaticInvokeExpr(reportCounter_sysexit.makeRef(), StringConstant.v("0"));
+			Stmt incStmt = Jimple.v().newInvokeStmt(incExpr);
+			body.getUnits().insertBefore(incStmt, ret_units);
 		}
 	}
 

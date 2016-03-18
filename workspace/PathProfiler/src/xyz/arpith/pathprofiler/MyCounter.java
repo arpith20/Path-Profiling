@@ -101,4 +101,19 @@ public class MyCounter {
 			}
 		}
 	}
+
+	// prints the output at the end of execution when System.exit is called
+	public static synchronized void report_sys_exit(String ret_val) {
+		System.out.println("Done Analysis");
+		for (Map.Entry<String, HashMap<Integer, Integer>> entry : count.entrySet()) {
+			String method = entry.getKey();
+			System.out.println("****" + method);
+			for (Map.Entry<Integer, Integer> valEntry : entry.getValue().entrySet()) {
+				Integer name = valEntry.getKey();
+				Integer student = valEntry.getValue();
+				System.out.println("    PathSum:" + name + " --> Count: " + student);
+			}
+		}
+		System.exit(Integer.parseInt(ret_val));
+	}
 }
