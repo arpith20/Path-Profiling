@@ -233,14 +233,19 @@ public class PathProfiler extends BodyTransformer {
 		 */
 		public void buildDAG(BriefUnitGraph cfg) {
 
-			// ensure single exit
-			if (cfg.getTails().size() > 1) {
-				for (int i = 1; i < cfg.getTails().size(); i++) {
-					MyEdge e = new MyEdge(cfg.getTails().get(i), EXIT);
-					edges.add(e);
-					singleexit.add(e);
-				}
-			}
+			// // Legacy Code
+			// // This code was used when multiple return points were handled
+			// with
+			// // the use of fail safe instrumentation.
+			// // ---
+			// // ensure single exit
+			// if (cfg.getTails().size() > 1) {
+			// for (int i = 1; i < cfg.getTails().size(); i++) {
+			// MyEdge e = new MyEdge(cfg.getTails().get(i), EXIT);
+			// edges.add(e);
+			// singleexit.add(e);
+			// }
+			// }
 
 			Iterator<Unit> cfg_iterator = cfg.iterator();
 			while (cfg_iterator.hasNext()) {
