@@ -67,9 +67,11 @@ public class MyCounter {
 		}
 
 		Integer val;
-		if (data.split(":")[1].equals("r"))
+		if (data.split(":")[1].equals("r")) {
 			val = r.get(method);
-		else
+			if (val == null)
+				val = 0;
+		} else
 			val = 0;
 		val = val + add_val;
 
@@ -90,7 +92,6 @@ public class MyCounter {
 
 	// prints the output at the end of execution
 	public static synchronized void report() {
-		System.out.println("Done Analysis");
 		for (Map.Entry<String, HashMap<Integer, Integer>> entry : count.entrySet()) {
 			String method = entry.getKey();
 			System.out.println("****" + method);

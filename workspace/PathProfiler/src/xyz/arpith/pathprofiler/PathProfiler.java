@@ -83,14 +83,14 @@ public class PathProfiler extends BodyTransformer {
 	boolean placeInst = true;
 
 	// Specify if processing functions with multiple return points is allowed
-	boolean allowMultiReturnPoints = true;
+	boolean allowMultiReturnPoints = false;
 
 	// Replace all instances of System.exit with instrumentation to print the
 	// report and exit the program
 	boolean replaceSystemExit = true;
 
 	// A flag to control if CFG needs to be displayed or not
-	boolean displayCFG = true;
+	boolean displayCFG = false;
 
 	// The output folder will have instrumented CFG
 	boolean displayInstrumentedCFG = true;
@@ -552,9 +552,26 @@ public class PathProfiler extends BodyTransformer {
 			/*
 			 * Do not instrument or analyze void <init>()
 			 */
-			check = signature.contains("void <init");
-			if (check)
+			check = signature.contains("init");
+			if (check) {
+				clear_data();
 				return;
+			}
+
+			if (meth.getSignature().contains("jdk.internal")) {
+				clear_data();
+				return;
+			}
+
+			if (meth.getSignature().contains("xyz.arpith.pathprofiler.MyCounter")) {
+				clear_data();
+				return;
+			}
+
+			if (meth.getSignature().toLowerCase().contains("iterator")) {
+				clear_data();
+				return;
+			}
 
 			/*
 			 * This analyzes the methods given as command line argument. If this
@@ -572,6 +589,14 @@ public class PathProfiler extends BodyTransformer {
 				// initializations
 				ENTRY = cfg.getHeads().get(0);
 				EXIT = cfg.getTails().get(0);
+
+				if (allowMultiReturnPoints == false)
+					if (cfg.getTails().size() > 1) {
+						clear_data();
+						return;
+					}
+
+				// print_cfg(b);
 
 				if (replaceSystemExit == true) {
 					Chain units = body.getUnits();
@@ -639,9 +664,6 @@ public class PathProfiler extends BodyTransformer {
 				 * Just comment the following code if you wish to analyze such
 				 * methods.
 				 */
-				if (allowMultiReturnPoints == false)
-					if (cfg.getTails().size() > 1)
-						return;
 
 				// display signature of method being analyzed
 				System.out.println();
@@ -686,7 +708,13 @@ public class PathProfiler extends BodyTransformer {
 				}
 
 				// assign values to edges in DAG (Algo in Figure 5 in paper)
-				assignVals(dag);
+				System.out.println("assigning vals");
+				if (!assignVals(dag)) {
+					clear_data();
+					return;
+				}
+
+				System.out.println("done assigning vals");
 
 				// name says it all :)
 				buildSpanningTree(dag);
@@ -761,17 +789,21 @@ public class PathProfiler extends BodyTransformer {
 				}
 				System.out.println("Exiting internalTransform");
 
-				// Clear data for use by other threads
-				nodeDataHash.clear();
-				spanningTreeEdges.clear();
-				chordEdges.clear();
-				inc.clear();
-				instrument.clear();
-				instrument_encoded.clear();
-				sys_exit_unit_ret.clear();
-				do_not_remove.clear();
+				clear_data();
 			}
 		}
+	}
+
+	public void clear_data() {
+		// Clear data for use by other threads
+		nodeDataHash.clear();
+		spanningTreeEdges.clear();
+		chordEdges.clear();
+		inc.clear();
+		instrument.clear();
+		instrument_encoded.clear();
+		sys_exit_unit_ret.clear();
+		do_not_remove.clear();
 	}
 
 	// These edges are not removed when trying to clear forest
@@ -1589,7 +1621,8 @@ public class PathProfiler extends BodyTransformer {
 	/*
 	 * assign values to edges in DAG (Algo in Figure 5)
 	 */
-	public void assignVals(DAG cfg) {
+	public boolean assignVals(DAG cfg) {
+		int count = 0;
 		Queue<Unit> toProcess = new LinkedList<Unit>();
 		// initialize queue
 		toProcess.add(EXIT);
@@ -1609,7 +1642,11 @@ public class PathProfiler extends BodyTransformer {
 			}
 			nodeDataHash.put(v, nd);
 			toProcess.addAll(cfg.getPredsOf(v));
+			count++;
+			if (count > 1000000)
+				return false;
 		}
+		return true;
 	}
 
 	/*
