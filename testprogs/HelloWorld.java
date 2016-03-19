@@ -1,20 +1,82 @@
 import java.util.Scanner;
+import java.io.PrintStream;
+import java.io.FileOutputStream;
+import java.io.FileNotFoundException;
+
+
 class HelloWorld{
 	public static void main(String[] argv) throws Exception
 	{
-		Scanner in = new Scanner(System.in);
-	    int x = in.nextInt();
-		simpleif(2);
-		simpleif(1);
-		simpleif(1);
+		//Scanner in = new Scanner(System.in);
+	    //int x = in.nextInt();
+	    HelloWorld hw = new HelloWorld();
+	    System.out.println("Simple if");
+		hw.simpleif(2);
+		hw.simpleif(2);
+		hw.simpleif(1);
+		hw.simpleif(1);
+		hw.simpleif(1);
+		hw.simpleif(1);
+
+		System.out.println("main2");
+		hw.main2();
+		hw.main2();
+
+		System.out.println("main3");
+		hw.main3();
+
+		System.out.println("multi_Ret");
+		hw.multi_ret(2);
+		hw.multi_ret(2);
+		hw.multi_ret(190);
+
+		System.out.println("onw while");
+		hw.one_while(2);
+		hw.one_while(1);
+
+		System.out.println("two while");
+		hw.two_while(2);
+		hw.two_while(1);
+
+		System.out.println("nested while");
+		hw.nested_while(4);
+
+		System.out.println("month");
+		hw.func_month(3);
+		hw.func_month(4);
+
+		System.out.println("another example");
+		hw.another_example(5);
+
 	}
 
-	public static void simpleif(int x){
+	public void simpleif(int x){
 		if(x==2){
 			System.out.println(x);
 		} else{
 			System.out.println(x);
 		}
+	}
+
+	public void exception_func(){
+		PrintStream printStream;
+			try {
+				printStream = new PrintStream(new FileOutputStream("output.txt"));
+				System.setOut(printStream);
+			} catch (FileNotFoundException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+			
+	}
+
+	public void simpleif_exit(int x){
+		if(x==2){
+			System.exit(x);
+		} else if(x==3){
+			System.exit(x);
+		}
+		System.out.println(x);
 	}
 
 	public void main2()

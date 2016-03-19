@@ -122,6 +122,9 @@ public class PathProfiler extends BodyTransformer {
 	// Stores all return units added to handle System.exit
 	List<Unit> sys_exit_unit_ret = new ArrayList<Unit>();
 
+	// Units that should not be deleted by clear_Extra_forest
+	List<Unit> do_not_remove = new ArrayList<Unit>();
+
 	/*
 	 * Code from CFG Viewer. CFG ciewer generates a dot file which can be used
 	 * to graphically view the control flow graph of the given method
@@ -263,19 +266,24 @@ public class PathProfiler extends BodyTransformer {
 							// instrument_encoded.put(back, "count:r:0");
 							// instrument_encoded.put(back, "ini:0");
 
+							MyEdge ent = null;
 							if (retriveEdge(ENTRY, succ, this) == null) {
-								MyEdge ent = new MyEdge(ENTRY, succ);
+								ent = new MyEdge(ENTRY, succ);
 								edges.add(ent);
-								artificial.put(ent, back);
-								artificial_list.add(ent);
-							}
+							} else
+								ent = retriveEdge(ENTRY, succ, this);
+							artificial.put(ent, back);
+							artificial_list.add(ent);
 
+							MyEdge ext;
 							if (retriveEdge(unit, EXIT, this) == null) {
-								MyEdge ext = new MyEdge(unit, EXIT);
+								ext = new MyEdge(unit, EXIT);
 								edges.add(ext);
-								artificial.put(ext, back);
-								artificial_list.add(ext);
-							}
+
+							} else
+								ext = retriveEdge(unit, EXIT, this);
+							artificial.put(ext, back);
+							artificial_list.add(ext);
 						}
 
 						// legacy code. NOT used
@@ -371,7 +379,7 @@ public class PathProfiler extends BodyTransformer {
 		 */
 		public boolean isContainedIn(List<MyEdge> l) {
 			for (MyEdge e : l) {
-				if (this.equals(e))
+				if (e == this)
 					return true;
 			}
 			return false;
@@ -562,6 +570,8 @@ public class PathProfiler extends BodyTransformer {
 
 				if (replaceSystemExit == true) {
 					Chain units = body.getUnits();
+
+					// Iterate through all units looking for System.exit
 					Iterator stmtIt = units.snapshotIterator();
 
 					List<Unit> system_exit_units = new ArrayList<Unit>();
@@ -598,8 +608,10 @@ public class PathProfiler extends BodyTransformer {
 					// rebuild CFG
 					cfg = new BriefUnitGraph(body);
 
+					determineUnitsToKeep(cfg);
+
 					// remove all disconnected graphs
-					clear_extra_forest(body, cfg);
+					clear_extra_forest(body, cfg, system_exit_units);
 
 					// rebuild CFG
 					cfg = new BriefUnitGraph(body);
@@ -752,6 +764,29 @@ public class PathProfiler extends BodyTransformer {
 				instrument.clear();
 				instrument_encoded.clear();
 				sys_exit_unit_ret.clear();
+				do_not_remove.clear();
+			}
+		}
+	}
+
+	// These edges are not removed when trying to clear forest
+	public void determineUnitsToKeep(BriefUnitGraph cfg) {
+		if (cfg.getHeads().size() == 1)
+			return;
+
+		Queue<Unit> queue = new LinkedList();
+		List<Unit> visited = new ArrayList<Unit>();
+		queue.add(ENTRY);
+		while (!queue.isEmpty()) {
+			Unit u = queue.remove();
+			// System.out.println("%%%" + u.toString());
+			visited.add(u);
+			do_not_remove.add(u);
+			List<Unit> succs = cfg.getSuccsOf(u);
+			for (Unit succ : succs) {
+				if (!visited.contains(succ)) {
+					queue.add(succ);
+				}
 			}
 		}
 	}
@@ -761,23 +796,29 @@ public class PathProfiler extends BodyTransformer {
 	 * (forest). Keeping such forests can cause issues with creation of spanning
 	 * trees. Hence this has to be removed.
 	 */
-	public void clear_extra_forest(Body body, BriefUnitGraph cfg) {
-		while (cfg.getHeads().size() != 1) {
-			List<Unit> heads = cfg.getHeads();
-			for (Unit head : heads) {
-				if (head == ENTRY)
-					continue;
-				Queue<Unit> queue = new LinkedList();
-				queue.add(head);
-				while (!queue.isEmpty()) {
-					Unit u_remove = queue.remove();
-					queue.addAll(cfg.getSuccsOf(u_remove));
-					body.getUnits().remove(u_remove);
+	public void clear_extra_forest(Body body, BriefUnitGraph cfg, List<Unit> sys_exit_heads) {
+		List<Unit> heads = sys_exit_heads;
+		List<Unit> visited = new ArrayList<Unit>();
+		for (Unit head : heads) {
+			if (head == ENTRY)
+				continue;
+			Queue<Unit> queue = new LinkedList();
+			queue.add(head);
+			while (!queue.isEmpty()) {
+				Unit u = queue.remove();
+				visited.add(u);
+				List<Unit> succs = cfg.getSuccsOf(u);
+				for (Unit succ : succs) {
+					if (!visited.contains(succ) && !do_not_remove.contains(succ)) {
+						queue.add(succ);
+					}
 				}
-
+				System.out.println("%%" + u.toString());
+				body.getUnits().remove(u);
 			}
-			cfg = new BriefUnitGraph(body);
+
 		}
+		cfg = new BriefUnitGraph(body);
 	}
 
 	public boolean get_extra_heads(BriefUnitGraph cfg) {
@@ -1172,7 +1213,6 @@ public class PathProfiler extends BodyTransformer {
 			if (tokens[0].contains("dummy_exit_edge")) {
 				System.out.println("Instrument_toClass:" + edge.src + "  -- >  " + edge.tgt + " *** " + val);
 
-				System.out.println(tokens[0]);
 				// remove the string dummy_exit_edge# from val
 				String[] temp_tokens = val.split("#");
 				val = temp_tokens[1] + "#" + temp_tokens[2];
@@ -1368,7 +1408,8 @@ public class PathProfiler extends BodyTransformer {
 			if (edge.isContainedIn(dag.artificial_list)) {
 				MyEdge backedge = dag.artificial.get(edge);
 				String instrumentation = instrument_encoded.get(edge);
-				instrument_encoded.remove(edge);
+				if (!dag.original.contains(edge))
+					instrument_encoded.remove(edge);
 
 				// new_instrumentation is the instrumentation to be placed in
 				// backedge
