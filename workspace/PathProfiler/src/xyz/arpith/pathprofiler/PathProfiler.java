@@ -68,22 +68,38 @@ public class PathProfiler extends BodyTransformer {
 	boolean useFailSafe = false; // use failsafe instrumentation technique.
 									// see failSafePlaceInstruments()
 
+	/*************************************************************************
+	 * CONTROL PANEL
+	 *************************************************************************/
+
 	/*
 	 * This allows the user to input a path sum for which the this returns the
 	 * path taken by the program
 	 */
 	boolean regeneratePath = false;
 
-	// Specify whether you want to modify the class files. Use with caution.
+	// Specify whether you want to modify the class files and place
+	// instrumentation.
 	boolean placeInst = true;
 
-	// specify if processing functions with multiple return points is alowed
+	// Specify if processing functions with multiple return points is allowed
 	boolean allowMultiReturnPoints = true;
 
+	// Replace all instances of System.exit with instrumentation to print the
+	// report and exit the program
 	boolean replaceSystemExit = true;
 
-	static boolean printToFile = false; // commenting such obvious things is an
-	// overkill :D
+	// A flag to control if CFG needs to be displayed or not
+	boolean displayCFG = true;
+
+	// The output folder will have instrumented CFG
+	boolean displayInstrumentedCFG = true;
+
+	// commenting such obvious things is an overkill :D
+	static boolean printToFile = false;
+
+	/*************************************************************************
+	 *************************************************************************/
 
 	// Stores metadata (NodeData) for each unit in CFG
 	HashMap<Unit, NodeData> nodeDataHash = new HashMap<Unit, NodeData>();
@@ -107,9 +123,8 @@ public class PathProfiler extends BodyTransformer {
 	List<Unit> sys_exit_unit_ret = new ArrayList<Unit>();
 
 	/*
-	 * Code from CFG Viewer. CFG ciewer generates a dot file in sootOutpot
-	 * directory which can be used to graphically view the control flow graph of
-	 * the given method
+	 * Code from CFG Viewer. CFG ciewer generates a dot file which can be used
+	 * to graphically view the control flow graph of the given method
 	 */
 	private static final String packToJoin = "jtp";
 	private static final String phaseSubname = "printcfg";
@@ -590,7 +605,8 @@ public class PathProfiler extends BodyTransformer {
 					cfg = new BriefUnitGraph(body);
 				}
 
-				// print_cfg(b);
+				if (displayCFG && !displayInstrumentedCFG)
+					print_cfg(b);
 
 				/*
 				 * Update: Multiple return points is properly supported
@@ -707,7 +723,8 @@ public class PathProfiler extends BodyTransformer {
 				/*
 				 * Saves the CFG to sootOutput file
 				 */
-				print_cfg(b);
+				if (displayCFG && displayInstrumentedCFG)
+					print_cfg(b);
 
 				/*
 				 * Given a path sum, which the user has to input,
