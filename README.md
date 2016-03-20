@@ -44,7 +44,7 @@ You may download it from official sources but in that case, you'll manually need
 
 To run the benchmarks, find the file ```testprogs/DaCapo/runbm.sh```   
 ```
-renbm.sh benchmark_name
+runbm.sh benchmark_name
 ```
 
 ### System Configuration
