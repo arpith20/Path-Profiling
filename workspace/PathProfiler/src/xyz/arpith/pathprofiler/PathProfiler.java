@@ -83,7 +83,7 @@ public class PathProfiler extends BodyTransformer {
 	boolean placeInst = true;
 
 	// Specify if processing functions with multiple return points is allowed
-	boolean allowMultiReturnPoints = false;
+	boolean allowMultiReturnPoints = true;
 
 	// Replace all instances of System.exit with instrumentation to print the
 	// report and exit the program
@@ -98,6 +98,10 @@ public class PathProfiler extends BodyTransformer {
 	// commenting such obvious things is an overkill :D
 	static boolean printToFile = false;
 
+	// Threshold
+	// Specify the number of nodes to visit before discontinuing execution
+	// Used when assigning values assign_vals()
+	int threshold = 100000;
 	/*************************************************************************
 	 *************************************************************************/
 
@@ -568,10 +572,10 @@ public class PathProfiler extends BodyTransformer {
 				return;
 			}
 
-			if (meth.getSignature().toLowerCase().contains("iterator")) {
-				clear_data();
-				return;
-			}
+			// if (meth.getSignature().toLowerCase().contains("iterator")) {
+			// clear_data();
+			// return;
+			// }
 
 			/*
 			 * This analyzes the methods given as command line argument. If this
@@ -1643,7 +1647,7 @@ public class PathProfiler extends BodyTransformer {
 			nodeDataHash.put(v, nd);
 			toProcess.addAll(cfg.getPredsOf(v));
 			count++;
-			if (count > 1000000)
+			if (count > threshold)
 				return false;
 		}
 		return true;
