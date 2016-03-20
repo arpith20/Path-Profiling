@@ -227,4 +227,40 @@ class HelloWorld{
         	x--;
         }
 	}
+
+	public void if1(int x) {
+		if(x>2)
+			System.out.println(x);
+		System.out.println(x);
+	}
+
+	public void if1_alt(int x) {
+		if(x>2)
+			System.out.println(x);
+	}
+
+	public void if3(int x) {
+		if(x>2)
+			System.out.println(x);
+		else if(x<5)
+			System.out.println(x);
+		else
+			System.out.println(x);
+	}
+
+	public void straight(int x) {
+		System.out.println(x);
+		System.out.println(x);
+	}
+
+	public void recursion(int x){
+		if(x!=1)
+			recursion(x--);
+	}
+
+	public void recursion2(int x){
+		if(x!=1)
+			recursion(x--);
+		System.out.println(x);
+	}
 }
