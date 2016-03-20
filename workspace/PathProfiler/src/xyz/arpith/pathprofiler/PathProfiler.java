@@ -58,8 +58,6 @@ import soot.util.dot.DotGraph;
  * 
  */
 
-// TODO: Handle backedge's instrumentation
-// TODO: handle system.exit(0) cases
 public class PathProfiler extends BodyTransformer {
 
 	Unit ENTRY; // Entry node of the graph
