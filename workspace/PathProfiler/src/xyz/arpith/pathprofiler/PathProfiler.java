@@ -71,7 +71,7 @@ public class PathProfiler extends BodyTransformer {
 	 *************************************************************************/
 
 	/*
-	 * This allows the user to input a path sum for which the this returns the
+	 * This allows the user to input a path sum for which this returns the
 	 * path taken by the program
 	 */
 	boolean regeneratePath = false;
@@ -1055,13 +1055,13 @@ public class PathProfiler extends BodyTransformer {
 						succ_toProcess.remove(u_box.getUnit());
 						if (u_box.getUnit() == edge.tgt) {
 
-							InvokeExpr incExpr = Jimple.v().newStaticInvokeExpr(initializeCounter.makeRef(),
-									StringConstant.v(val_ini));
+							InvokeExpr incExpr = Jimple.v().newStaticInvokeExpr(setCountCounter.makeRef(),
+									StringConstant.v(val_count));
 							Stmt incStmt0 = Jimple.v().newInvokeStmt(incExpr);
 							body.getUnits().insertAfter(incStmt0, EXIT);
 
-							incExpr = Jimple.v().newStaticInvokeExpr(setCountCounter.makeRef(),
-									StringConstant.v(val_count));
+							incExpr = Jimple.v().newStaticInvokeExpr(initializeCounter.makeRef(),
+									StringConstant.v(val_ini));
 							Stmt incStmt = Jimple.v().newInvokeStmt(incExpr);
 							body.getUnits().insertAfter(incStmt, incStmt0);
 
